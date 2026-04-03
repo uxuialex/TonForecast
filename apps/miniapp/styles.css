@@ -262,6 +262,11 @@ main {
   gap: 16px;
 }
 
+.market-feedback {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+
 .market-card,
 .create-card,
 .preview-card,

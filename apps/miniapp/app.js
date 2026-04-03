@@ -19,8 +19,12 @@ const thresholdEl = document.querySelector("#threshold");
 const previewQuestionEl = document.querySelector("#preview-question");
 const walletStatusEl = document.querySelector("#wallet-status");
 const walletAddressEl = document.querySelector("#wallet-address");
+const marketGridEl = document.querySelector("#market-grid");
+const marketFeedbackEl = document.querySelector("#markets-feedback");
+const filterEls = document.querySelectorAll(".filter");
 
 const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
+let activeMarketStatus = "";
 
 function shortAddress(value) {
   return `${value.slice(0, 6)}...${value.slice(-6)}`;
@@ -49,6 +53,91 @@ if (window.TON_CONNECT_UI?.TonConnectUI) {
     syncWalletState(wallet);
   });
 }
+
+function getAssetTone(token) {
+  if (token === "TON") return "tone-blue";
+  if (token === "BTC") return "tone-orange";
+  return "tone-green";
+}
+
+function getStatusClass(status) {
+  return status === "LOCKED" ? "status-pill is-locking" : "status-pill";
+}
+
+function formatCountdown(timestampSec) {
+  const diff = Math.max(0, timestampSec - Math.floor(Date.now() / 1000));
+  const minutes = String(Math.floor(diff / 60)).padStart(2, "0");
+  const seconds = String(diff % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
+function renderMarkets(items) {
+  if (!items.length) {
+    marketGridEl.innerHTML = "";
+    marketFeedbackEl.textContent = "No markets for the selected status.";
+    return;
+  }
+
+  marketFeedbackEl.textContent = `${items.length} market${items.length > 1 ? "s" : ""}`;
+  marketGridEl.innerHTML = items
+    .map((market) => {
+      const statusValue =
+        market.status === "LOCKED"
+          ? "Resolving"
+          : market.status.startsWith("RESOLVED")
+            ? market.outcome ?? market.status
+            : formatCountdown(market.closeAt);
+
+      return `
+        <article class="market-card">
+          <div class="market-topline">
+            <span class="asset-badge ${getAssetTone(market.token)}">${market.token}</span>
+            <span class="${getStatusClass(market.status)}">${market.status}</span>
+          </div>
+          <h3>${market.question}</h3>
+          <dl class="market-stats">
+            <div><dt>Current</dt><dd>$${market.currentPrice}</dd></div>
+            <div><dt>Threshold</dt><dd>$${market.threshold}</dd></div>
+            <div><dt>${market.status === "OPEN" ? "Timer" : "Status"}</dt><dd>${statusValue}</dd></div>
+            <div><dt>YES pool</dt><dd>${market.yesPool} TON</dd></div>
+            <div><dt>NO pool</dt><dd>${market.noPool} TON</dd></div>
+            <div><dt>Resolve at</dt><dd>${new Date(market.resolveAt * 1000).toLocaleTimeString()}</dd></div>
+          </dl>
+          <div class="card-actions">
+            <button class="yes-button">Bet YES</button>
+            <button class="no-button">Bet NO</button>
+          </div>
+        </article>
+      `;
+    })
+    .join("");
+}
+
+async function loadMarkets(status = "") {
+  marketFeedbackEl.textContent = "Loading markets...";
+
+  try {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const response = await fetch(`/api/markets${query}`);
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const payload = await response.json();
+    renderMarkets(payload.items ?? []);
+  } catch (error) {
+    marketGridEl.innerHTML = "";
+    marketFeedbackEl.textContent = `Failed to load markets: ${error.message}`;
+  }
+}
+
+filterEls.forEach((filterEl) => {
+  filterEl.addEventListener("click", () => {
+    activeMarketStatus = filterEl.dataset.status ?? "";
+    filterEls.forEach((item) => item.classList.toggle("is-active", item === filterEl));
+    loadMarkets(activeMarketStatus);
+  });
+});
 
 function syncThresholds() {
   const asset = assetEl.value;
@@ -88,3 +177,4 @@ thresholdEl.addEventListener("change", syncPreview);
 
 syncThresholds();
 syncPreview();
+loadMarkets(activeMarketStatus);

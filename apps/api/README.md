@@ -1,9 +1,13 @@
 # API
 
-This directory will contain the small backend API.
+Small backend API for read models and cached market data.
 
-Planned responsibilities:
+Current responsibilities:
 
-- cache STON.fi market data
-- serve frontend read models
-- optional market indexing
+- `/api/prices`
+- `/api/markets`
+- `/api/markets/:id`
+- `/api/positions?userAddress=...`
+- `/api/presets?asset=TON|BTC|ETH`
+
+Current implementation uses mock data but matches the intended MVP shape.

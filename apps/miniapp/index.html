@@ -64,69 +64,15 @@
               <h2>Live market list</h2>
             </div>
             <div class="filter-group">
-              <button class="filter is-active">Open</button>
-              <button class="filter">Resolving</button>
-              <button class="filter">Resolved</button>
+              <button class="filter is-active" data-status="">All</button>
+              <button class="filter" data-status="OPEN">Open</button>
+              <button class="filter" data-status="LOCKED">Resolving</button>
+              <button class="filter" data-status="RESOLVED_YES">Resolved</button>
             </div>
           </div>
 
-          <div class="market-grid">
-            <article class="market-card">
-              <div class="market-topline">
-                <span class="asset-badge tone-blue">TON</span>
-                <span class="status-pill">OPEN</span>
-              </div>
-              <h3>Will TON be above $3.42 in 60 seconds?</h3>
-              <dl class="market-stats">
-                <div><dt>Current</dt><dd>$3.41</dd></div>
-                <div><dt>Threshold</dt><dd>$3.42</dd></div>
-                <div><dt>Timer</dt><dd>00:41</dd></div>
-                <div><dt>YES pool</dt><dd>128 TON</dd></div>
-                <div><dt>NO pool</dt><dd>91 TON</dd></div>
-              </dl>
-              <div class="card-actions">
-                <button class="yes-button">Bet YES</button>
-                <button class="no-button">Bet NO</button>
-              </div>
-            </article>
-
-            <article class="market-card">
-              <div class="market-topline">
-                <span class="asset-badge tone-orange">BTC</span>
-                <span class="status-pill">OPEN</span>
-              </div>
-              <h3>Will BTC be below $68,450 in 30 seconds?</h3>
-              <dl class="market-stats">
-                <div><dt>Current</dt><dd>$68,471</dd></div>
-                <div><dt>Threshold</dt><dd>$68,450</dd></div>
-                <div><dt>Timer</dt><dd>00:19</dd></div>
-                <div><dt>YES pool</dt><dd>74 TON</dd></div>
-                <div><dt>NO pool</dt><dd>112 TON</dd></div>
-              </dl>
-              <div class="card-actions">
-                <button class="yes-button">Bet YES</button>
-                <button class="no-button">Bet NO</button>
-              </div>
-            </article>
-
-            <article class="market-card">
-              <div class="market-topline">
-                <span class="asset-badge tone-green">ETH</span>
-                <span class="status-pill is-locking">LOCKED</span>
-              </div>
-              <h3>Will ETH be above $3,540 in 60 seconds?</h3>
-              <dl class="market-stats">
-                <div><dt>Current</dt><dd>$3,544</dd></div>
-                <div><dt>Threshold</dt><dd>$3,540</dd></div>
-                <div><dt>Status</dt><dd>Resolving</dd></div>
-                <div><dt>YES pool</dt><dd>151 TON</dd></div>
-                <div><dt>NO pool</dt><dd>104 TON</dd></div>
-              </dl>
-              <div class="card-actions">
-                <button class="ghost-button">View Market</button>
-              </div>
-            </article>
-          </div>
+          <p id="markets-feedback" class="market-feedback">Loading markets...</p>
+          <div id="market-grid" class="market-grid"></div>
         </section>
 
         <section class="panel" data-panel="create">

@@ -1,9 +1,11 @@
 # Resolver
 
-This directory will contain the settlement worker.
+Settlement worker for expired markets.
 
-Planned responsibilities:
+Current scaffold:
 
-- detect expired markets
-- fetch final price
-- send `resolve()` transactions
+- selects due `LOCKED` markets
+- computes `YES/NO` from threshold and final price
+- logs the future resolve command in dry-run mode
+
+Next step is replacing mock inputs with onchain market reads and real price fetches.
