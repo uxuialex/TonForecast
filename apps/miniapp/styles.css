@@ -183,6 +183,49 @@ h1, h2, h3, p, ul, ol, dl, dd {
   display: none;
 }
 
+.inline-notice {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.inline-notice.is-hidden {
+  display: none;
+}
+
+.inline-notice--info {
+  color: var(--accent);
+  background: rgba(79, 172, 254, 0.08);
+  border-color: rgba(79, 172, 254, 0.18);
+}
+
+.inline-notice--success {
+  color: var(--yes);
+  background: var(--yes-dim);
+  border-color: rgba(52, 211, 153, 0.18);
+}
+
+.inline-notice--warn {
+  color: var(--warn);
+  background: var(--warn-dim);
+  border-color: rgba(251, 191, 36, 0.18);
+}
+
+.inline-notice--error {
+  color: var(--no);
+  background: var(--no-dim);
+  border-color: rgba(248, 113, 113, 0.18);
+}
+
+.inline-notice--muted {
+  color: var(--dim);
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
 /* --- Ticker strip (3×2 tile grid) ----------------------------- */
 
 .ticker-strip {
@@ -687,10 +730,6 @@ dd {
 
 .market-note {
   margin-top: 10px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 11px;
-  line-height: 1.5;
-  color: var(--dim);
 }
 
 .skeleton-pill,
@@ -972,6 +1011,10 @@ select:focus {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.create-notice {
+  margin-top: -4px;
+}
+
 .preview-box {
   padding: 16px;
   background: rgba(255, 255, 255, 0.018);
@@ -1114,6 +1157,10 @@ select:focus {
 
 .position-row .compact-button {
   margin-left: auto;
+}
+
+.position-note {
+  width: 100%;
 }
 
 .position-empty {

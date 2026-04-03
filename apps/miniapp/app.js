@@ -82,6 +82,7 @@ const marketFilterOptionEls = Array.from(
 );
 const priceStripEl = document.querySelector("#price-strip");
 const createCurrentPriceEl = document.querySelector("#create-current-price");
+const createNoticeEl = document.querySelector("#create-notice");
 const createMarketButtonEl = document.querySelector("#create-market-button");
 const actionFeedbackEl = document.querySelector("#action-feedback");
 const runtimeModeEl = document.querySelector("#runtime-mode");
@@ -114,6 +115,9 @@ const state = {
   pendingBet: null,
   pendingClaim: null,
   marketsLoading: false,
+  createNotice: null,
+  marketNotices: {},
+  positionNotices: {},
 };
 
 let panelTransitionInFlight = false;
@@ -189,13 +193,93 @@ function shortAddress(value) {
 }
 
 function setActionFeedback(message) {
+  if (!actionFeedbackEl) {
+    return;
+  }
+
   actionFeedbackEl.textContent = message;
   actionFeedbackEl.classList.remove("is-hidden");
 }
 
 function clearActionFeedback() {
+  if (!actionFeedbackEl) {
+    return;
+  }
+
   actionFeedbackEl.textContent = "";
   actionFeedbackEl.classList.add("is-hidden");
+}
+
+function renderInlineNotice(element, notice) {
+  if (!element) {
+    return;
+  }
+
+  element.classList.remove(
+    "is-hidden",
+    "inline-notice--info",
+    "inline-notice--success",
+    "inline-notice--warn",
+    "inline-notice--error",
+    "inline-notice--muted",
+  );
+
+  if (!notice?.message) {
+    element.textContent = "";
+    element.classList.add("is-hidden");
+    return;
+  }
+
+  const type = notice.type || "info";
+  element.textContent = notice.message;
+  element.classList.add(`inline-notice--${type}`);
+}
+
+function setCreateNotice(message, type = "info") {
+  state.createNotice = message ? { message, type } : null;
+  renderInlineNotice(createNoticeEl, state.createNotice);
+}
+
+function setMarketNotice(contractAddress, message, type = "info") {
+  if (!contractAddress) {
+    return;
+  }
+
+  if (!message) {
+    delete state.marketNotices[contractAddress];
+  } else {
+    state.marketNotices[contractAddress] = { message, type };
+  }
+
+  renderMarkets(state.markets);
+}
+
+function setPositionNotice(positionId, message, type = "info") {
+  if (!positionId) {
+    return;
+  }
+
+  if (!message) {
+    delete state.positionNotices[positionId];
+  } else {
+    state.positionNotices[positionId] = { message, type };
+  }
+
+  renderPositions(state.positions);
+}
+
+function normalizeActionError(message) {
+  if (!message) {
+    return "Unexpected error";
+  }
+
+  return String(message)
+    .replace(/^Create failed:\s*/i, "")
+    .replace(/^Bet failed:\s*/i, "")
+    .replace(/^Bet blocked:\s*/i, "")
+    .replace(/^Claim failed:\s*/i, "")
+    .replace(/^Claim blocked:\s*/i, "")
+    .trim();
 }
 
 function sleep(ms) {
@@ -213,15 +297,13 @@ function buildAssetPickerItemHtml(asset) {
 
 async function promptWalletConnection(contextLabel = "this action") {
   if (!state.tonConnectUI?.openModal) {
-    setActionFeedback(`Connect a wallet first to use ${contextLabel}.`);
-    return;
+    throw new Error(`Connect a wallet first to use ${contextLabel}.`);
   }
 
-  setActionFeedback(`Connect a wallet first to use ${contextLabel}.`);
   try {
     await state.tonConnectUI.openModal();
   } catch (error) {
-    setActionFeedback(
+    throw new Error(
       `Wallet connection failed: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
@@ -355,9 +437,7 @@ function syncWalletState(wallet) {
       '<div class="position-empty">Wallet disconnected. Position feed is idle.</div>';
     renderMarkets(state.markets);
     renderPositions(state.positions);
-    setActionFeedback(
-      "Connect a wallet to unlock create, bet, and claim actions.",
-    );
+    setCreateNotice("Connect a wallet to unlock create, bet, and claim actions.", "info");
     syncCreateButtonState();
     return;
   }
@@ -365,6 +445,9 @@ function syncWalletState(wallet) {
   walletStatusEl.textContent = "Wallet connected";
   walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
   clearActionFeedback();
+  if (state.createNotice?.message?.startsWith("Connect a wallet")) {
+    setCreateNotice(null);
+  }
   if (getActivePanelName() === "profile") {
     loadPositions();
   }
@@ -449,6 +532,8 @@ function syncPreview() {
   createCurrentPriceEl.textContent = state.createContext.blockedReason
     ? `${currentPriceText} • ${state.createContext.blockedReason}`
     : `${currentPriceText} • Fixed on signature. Price source: CMC for TON, STON.fi for ecosystem tokens.`;
+
+  renderInlineNotice(createNoticeEl, state.createNotice);
 }
 
 function syncCreateButtonState() {
@@ -522,6 +607,7 @@ function renderMarkets(items) {
         !isPendingBet &&
         !market.isPendingChain;
       const actionHint = getMarketActionHint(market, effectiveStatus);
+      const notice = state.marketNotices[market.contractAddress] ?? null;
       const isPendingCreate = state.pendingCreateAddress === market.contractAddress;
 
       return `
@@ -556,7 +642,13 @@ function renderMarkets(items) {
             <button class="yes-button ${pendingBetSide === "YES" ? "is-busy" : ""}" data-action="bet" data-side="YES" ${canBet ? "" : "disabled"}>${pendingBetSide === "YES" ? "Confirming..." : buildBetButtonLabel(market, "YES")}</button>
             <button class="no-button ${pendingBetSide === "NO" ? "is-busy" : ""}" data-action="bet" data-side="NO" ${canBet ? "" : "disabled"}>${pendingBetSide === "NO" ? "Confirming..." : buildBetButtonLabel(market, "NO")}</button>
           </div>
-          ${actionHint ? `<p class="market-note">${actionHint}</p>` : ""}
+          ${
+            notice
+              ? `<p class="market-note inline-notice inline-notice--${notice.type}">${notice.message}</p>`
+              : actionHint
+                ? `<p class="market-note inline-notice inline-notice--muted">${actionHint}</p>`
+                : ""
+          }
         </article>
       `;
     })
@@ -617,6 +709,11 @@ function renderPositions(items) {
           >
             ${getClaimButtonLabel(position)}
           </button>
+          ${
+            state.positionNotices[position.id]
+              ? `<p class="position-note inline-notice inline-notice--${state.positionNotices[position.id].type}">${state.positionNotices[position.id].message}</p>`
+              : ""
+          }
         </article>
       `,
     )
@@ -697,19 +794,27 @@ async function sendTonTransaction(intent) {
 
 async function handleCreateIntent() {
   if (!state.wallet) {
-    await promptWalletConnection("market creation");
+    try {
+      setCreateNotice("Connect a wallet to create a market.", "info");
+      await promptWalletConnection("market creation");
+    } catch (error) {
+      setCreateNotice(normalizeActionError(error.message), "error");
+    }
     return;
   }
 
   if (!state.createContext.canCreate) {
-    setActionFeedback(state.createContext.blockedReason || "Create blocked for this asset and duration.");
+    setCreateNotice(
+      state.createContext.blockedReason || "Create blocked for this asset and duration.",
+      "warn",
+    );
     return;
   }
 
   try {
     state.createSubmitting = true;
     syncCreateButtonState();
-    setActionFeedback("Preparing create transaction...");
+    setCreateNotice("Preparing create transaction...", "info");
     const intent = await requestJson("/api/actions/create-intent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -720,7 +825,7 @@ async function handleCreateIntent() {
       }),
     });
 
-    setActionFeedback(`Sign create for ${intent.draft.question}`);
+    setCreateNotice(`Sign create for ${intent.draft.question}`, "info");
     await sendTonTransaction(intent);
     state.createSubmitting = false;
     state.pendingCreateAddress = intent.draft.contractAddress;
@@ -733,8 +838,11 @@ async function handleCreateIntent() {
       }),
     });
 
-    setActionFeedback(
-      `Market submitted: ${intent.draft.question}. Waiting for blockchain confirmation before betting unlocks.`,
+    setCreateNotice(null);
+    setMarketNotice(
+      intent.draft.contractAddress,
+      "Market submitted. Waiting for blockchain confirmation before betting unlocks.",
+      "info",
     );
     await Promise.all([loadMarkets(state.activeMarketStatus), loadCreateContext()]);
     switchPanel("markets");
@@ -745,7 +853,7 @@ async function handleCreateIntent() {
     state.createSubmitting = false;
     state.pendingCreateAddress = null;
     syncCreateButtonState();
-    setActionFeedback(`Create failed: ${error.message}`);
+    setCreateNotice(normalizeActionError(error.message), "error");
   }
 }
 
@@ -758,21 +866,25 @@ async function waitForMarketReady(contractAddress) {
         state.pendingCreateAddress = null;
         syncCreateButtonState();
         await loadMarkets(state.activeMarketStatus);
-        setActionFeedback("Market confirmed onchain. Betting is now unlocked.");
+        setMarketNotice(contractAddress, "Market confirmed onchain. Betting is now unlocked.", "success");
         return;
       }
     } catch {
       // Keep polling until the contract is readable or timeout is reached.
     }
 
-    setActionFeedback("Waiting for blockchain confirmation before the first bet...");
+    setMarketNotice(contractAddress, "Waiting for blockchain confirmation before the first bet...", "info");
     await new Promise((resolve) => window.setTimeout(resolve, 2500));
   }
 
   await loadMarkets(state.activeMarketStatus);
   state.pendingCreateAddress = null;
   syncCreateButtonState();
-  setActionFeedback("Market is still waiting for blockchain confirmation. Betting will unlock automatically once the contract becomes readable.");
+  setMarketNotice(
+    contractAddress,
+    "Market is still waiting for blockchain confirmation. Betting will unlock automatically once the contract becomes readable.",
+    "warn",
+  );
 }
 
 async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon = 0, timeoutMs = 45_000) {
@@ -784,7 +896,7 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
       if (nextPosition && Number(nextPosition.amountTon ?? 0) > previousAmountTon) {
         state.pendingBet = null;
         await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
-        setActionFeedback("Bet confirmed onchain.");
+        setMarketNotice(contractAddress, "Bet confirmed onchain.", "success");
         return;
       }
     } catch {
@@ -796,7 +908,7 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
 
   state.pendingBet = null;
   await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
-  setActionFeedback("Bet sent. Position refresh may lag briefly while blockchain state propagates.");
+  setMarketNotice(contractAddress, "Bet sent. Position refresh may lag briefly while blockchain state propagates.", "warn");
 }
 
 async function handleBetIntent(contractAddress, side) {
@@ -806,12 +918,17 @@ async function handleBetIntent(contractAddress, side) {
   }
 
   if (!state.wallet) {
-    await promptWalletConnection("betting");
+    setMarketNotice(contractAddress, "Connect a wallet to place a bet.", "info");
+    try {
+      await promptWalletConnection("betting");
+    } catch (error) {
+      setMarketNotice(contractAddress, normalizeActionError(error.message), "error");
+    }
     return;
   }
 
   if (deriveEffectiveStatus(market) !== "OPEN") {
-    setActionFeedback(`Bet blocked: ${market.statusLabel}. Wait for the next open market.`);
+    setMarketNotice(contractAddress, `${market.statusLabel}. Wait for the next open market.`, "warn");
     return;
   }
 
@@ -823,7 +940,7 @@ async function handleBetIntent(contractAddress, side) {
   try {
     const existingPosition = state.positions.find((item) => item.contractAddress === contractAddress);
     const previousAmountTon = Number(existingPosition?.amountTon ?? 0);
-    setActionFeedback(`Preparing ${side === "YES" ? "Yes" : "No"} bet...`);
+    setMarketNotice(contractAddress, `Preparing ${side === "YES" ? "Yes" : "No"} bet...`, "info");
     const intent = await requestJson("/api/actions/bet-intent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -838,14 +955,18 @@ async function handleBetIntent(contractAddress, side) {
     state.pendingBet = { contractAddress, side };
     renderMarkets(state.markets);
     await sendTonTransaction(intent);
-    setActionFeedback(`Bet sent: ${side === "YES" ? "Yes" : "No"} on ${market.question}. Waiting for blockchain confirmation...`);
+    setMarketNotice(
+      contractAddress,
+      `${side === "YES" ? "Yes" : "No"} bet sent. Waiting for blockchain confirmation...`,
+      "info",
+    );
     waitForBetIndexed(contractAddress, state.wallet.account.address, previousAmountTon).catch((error) => {
       console.warn("waitForBetIndexed failed", error);
     });
   } catch (error) {
     state.pendingBet = null;
     renderMarkets(state.markets);
-    setActionFeedback(`Bet failed: ${error.message}`);
+    setMarketNotice(contractAddress, normalizeActionError(error.message), "error");
   }
 }
 
@@ -858,7 +979,7 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
       if (nextPosition?.claimed) {
         state.pendingClaim = null;
         await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
-        setActionFeedback("Claim confirmed onchain.");
+        setPositionNotice(positionId, "Claim confirmed onchain.", "success");
         return;
       }
     } catch {
@@ -870,7 +991,7 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
 
   state.pendingClaim = null;
   await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
-  setActionFeedback("Claim sent. Wallet balance and position state may update with a short onchain delay.");
+  setPositionNotice(positionId, "Claim sent. Wallet balance and position state may update with a short onchain delay.", "warn");
 }
 
 async function handleClaimIntent(positionId) {
@@ -880,15 +1001,22 @@ async function handleClaimIntent(positionId) {
   }
 
   if (!state.wallet) {
-    await promptWalletConnection("claim");
+    setPositionNotice(positionId, "Connect a wallet to claim winnings.", "info");
+    try {
+      await promptWalletConnection("claim");
+    } catch (error) {
+      setPositionNotice(positionId, normalizeActionError(error.message), "error");
+    }
     return;
   }
 
   if (!position.claimable) {
-    setActionFeedback(
+    setPositionNotice(
+      positionId,
       position.positionStatus === "LOCKED"
         ? "Claim unavailable: market is closed for bets and waiting for auto-resolve."
         : `Claim unavailable: ${position.positionStatusLabel}.`,
+      "warn",
     );
     return;
   }
@@ -896,7 +1024,7 @@ async function handleClaimIntent(positionId) {
   try {
     state.pendingClaim = { positionId, contractAddress: position.contractAddress };
     renderPositions(state.positions);
-    setActionFeedback(`Preparing claim for ${position.question}...`);
+    setPositionNotice(positionId, `Preparing claim for ${position.question}...`, "info");
     const intent = await requestJson("/api/actions/claim-intent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -907,14 +1035,14 @@ async function handleClaimIntent(positionId) {
     });
 
     await sendTonTransaction(intent);
-    setActionFeedback(`Claim sent for ${position.question}. Waiting for blockchain confirmation...`);
+    setPositionNotice(positionId, "Claim sent. Waiting for blockchain confirmation...", "info");
     waitForClaimIndexed(positionId, state.wallet.account.address).catch((error) => {
       console.warn("waitForClaimIndexed failed", error);
     });
   } catch (error) {
     state.pendingClaim = null;
     renderPositions(state.positions);
-    setActionFeedback(`Claim failed: ${error.message}`);
+    setPositionNotice(positionId, normalizeActionError(error.message), "error");
   }
 }
 
@@ -1137,3 +1265,4 @@ setInterval(() => {
 
 loadPrices();
 loadMarkets(state.activeMarketStatus);
+clearActionFeedback();

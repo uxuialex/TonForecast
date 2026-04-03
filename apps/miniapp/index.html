@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260403f" />
+    <link rel="stylesheet" href="./styles.css?v=20260403g" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
   </head>
@@ -30,7 +30,7 @@
         <div id="ton-connect" class="ton-connect-slot"></div>
       </header>
 
-      <div id="action-feedback" class="feedback-bar">
+      <div id="action-feedback" class="feedback-bar is-hidden">
         Connect a wallet to unlock create, bet, and claim actions.
       </div>
 
@@ -114,6 +114,7 @@
             </label>
 
             <p id="create-current-price" class="field-hint">Current price: loading…</p>
+            <div id="create-notice" class="inline-notice create-notice is-hidden" aria-live="polite"></div>
 
             <div class="preview-box">
               <span class="preview-label">Preview</span>
@@ -181,6 +182,6 @@
       </nav>
     </div>
 
-    <script src="./app.js?v=20260403f"></script>
+    <script src="./app.js?v=20260403g"></script>
   </body>
 </html>
