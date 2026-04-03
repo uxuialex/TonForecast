@@ -179,6 +179,10 @@ h1, h2, h3, p, ul, ol, dl, dd {
   line-height: 1.55;
 }
 
+.feedback-bar.is-hidden {
+  display: none;
+}
+
 /* --- Ticker strip (3×2 tile grid) ----------------------------- */
 
 .ticker-strip {
@@ -591,6 +595,10 @@ main {
   padding: 18px;
 }
 
+.market-card--skeleton {
+  pointer-events: none;
+}
+
 .market-card.is-pending-market {
   border-color: rgba(79, 172, 254, 0.22);
   box-shadow: 0 0 0 1px rgba(79, 172, 254, 0.08), 0 0 28px rgba(79, 172, 254, 0.08);
@@ -683,6 +691,66 @@ dd {
   font-size: 11px;
   line-height: 1.5;
   color: var(--dim);
+}
+
+.skeleton-pill,
+.skeleton-badge,
+.skeleton-line,
+.skeleton-button {
+  position: relative;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.skeleton-pill::after,
+.skeleton-badge::after,
+.skeleton-line::after,
+.skeleton-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: busy-shimmer 1.1s linear infinite;
+}
+
+.skeleton-pill {
+  width: 72px;
+  height: 30px;
+  border-radius: 999px;
+}
+
+.skeleton-badge {
+  width: 96px;
+  height: 24px;
+  border-radius: 999px;
+}
+
+.skeleton-line {
+  display: inline-flex;
+  width: 100%;
+  height: 14px;
+  border-radius: 10px;
+}
+
+.skeleton-line--title {
+  display: block;
+  width: 76%;
+  height: 28px;
+  margin-top: 14px;
+  border-radius: 14px;
+}
+
+.skeleton-button {
+  width: 100%;
+  height: 48px;
+  border-radius: var(--r-sm);
 }
 
 /* --- Asset badges --------------------------------------------- */

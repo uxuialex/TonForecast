@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 
-const ASSET_ICON_VERSION = "20260403d";
+const ASSET_ICON_VERSION = "20260403f";
 
 const ASSET_ICON_REGISTRY = {
   TON: {

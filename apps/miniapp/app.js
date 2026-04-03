@@ -20,7 +20,7 @@ const TOKEN_META = {
   REDO: { color: "#10B981" },
 };
 
-const ASSET_ICON_VERSION = "20260403d";
+const ASSET_ICON_VERSION = "20260403f";
 const CREATE_ASSET_OPTIONS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
 
 const MARKET_FILTER_OPTIONS = [
@@ -113,6 +113,7 @@ const state = {
   createSubmitting: false,
   pendingBet: null,
   pendingClaim: null,
+  marketsLoading: false,
 };
 
 let panelTransitionInFlight = false;
@@ -189,6 +190,12 @@ function shortAddress(value) {
 
 function setActionFeedback(message) {
   actionFeedbackEl.textContent = message;
+  actionFeedbackEl.classList.remove("is-hidden");
+}
+
+function clearActionFeedback() {
+  actionFeedbackEl.textContent = "";
+  actionFeedbackEl.classList.add("is-hidden");
 }
 
 function sleep(ms) {
@@ -357,9 +364,7 @@ function syncWalletState(wallet) {
 
   walletStatusEl.textContent = "Wallet connected";
   walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
-  setActionFeedback(
-    "Wallet connected. Create, bet, and claim now go through TON Connect.",
-  );
+  clearActionFeedback();
   if (getActivePanelName() === "profile") {
     loadPositions();
   }
@@ -403,6 +408,32 @@ function renderPrices(items) {
       `,
     )
     .join("");
+}
+
+function renderMarketSkeletons(count = 3) {
+  marketGridEl.innerHTML = Array.from({ length: count }, () => `
+    <article class="market-card market-card--skeleton" aria-hidden="true">
+      <div class="market-topline">
+        <div class="skeleton-pill"></div>
+        <div class="skeleton-badge"></div>
+      </div>
+      <div class="skeleton-line skeleton-line--title"></div>
+      <div class="market-stats">
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+        <div><dt>Loading</dt><dd><span class="skeleton-line"></span></dd></div>
+      </div>
+      <div class="card-actions">
+        <div class="skeleton-button"></div>
+        <div class="skeleton-button"></div>
+      </div>
+    </article>
+  `).join("");
 }
 
 function syncPreview() {
@@ -512,7 +543,7 @@ function renderMarkets(items) {
           <h3>${market.question}</h3>
           <dl class="market-stats">
             <div><dt>Current</dt><dd>${market.currentPriceLabel}</dd></div>
-            <div><dt>Direction</dt><dd>${market.directionLabel}</dd></div>
+            <div><dt>Duration</dt><dd>${formatDurationLabel(market.durationSec)}</dd></div>
             <div><dt>${statusMeta.statusText}</dt><dd>${statusMeta.statusValue}</dd></div>
             <div><dt>Close</dt><dd>${new Date(market.closeAt * 1000).toLocaleTimeString()}</dd></div>
             <div><dt>Up pool</dt><dd>${market.yesPoolLabel}</dd></div>
@@ -533,14 +564,20 @@ function renderMarkets(items) {
 }
 
 async function loadMarkets(status = "") {
+  state.marketsLoading = true;
   marketFeedbackEl.textContent = "Loading markets...";
+  if (!state.markets.length) {
+    renderMarketSkeletons();
+  }
 
   try {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
     const payload = await requestJson(`/api/markets${query}`);
     state.markets = payload.items ?? [];
+    state.marketsLoading = false;
     renderMarkets(state.markets);
   } catch (error) {
+    state.marketsLoading = false;
     state.markets = [];
     marketGridEl.innerHTML = "";
     marketFeedbackEl.textContent = `Failed to load markets: ${error.message}`;
