@@ -40,6 +40,7 @@ select {
 
 .hero,
 .wallet-panel,
+.demo-card,
 .ticker-strip,
 .tabbar,
 .market-card,
@@ -118,6 +119,37 @@ h1 {
   border: 1px solid var(--line);
   border-radius: 24px;
   background: rgba(18, 24, 45, 0.72);
+}
+
+.demo-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(260px, 0.9fr);
+  gap: 18px;
+  align-items: start;
+  margin-top: 20px;
+  padding: 20px 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(18, 24, 45, 0.72);
+}
+
+.demo-copy {
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.demo-steps {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text);
+  line-height: 1.8;
+}
+
+.action-feedback {
+  margin: 14px 0 0;
+  color: var(--accent-2);
+  line-height: 1.6;
 }
 
 .wallet-panel h2 {
@@ -209,6 +241,10 @@ h1 {
 .ticker-pill em {
   font-style: normal;
   color: var(--accent-2);
+}
+
+.ticker-pill.is-loading {
+  justify-content: center;
 }
 
 .tabbar {
@@ -319,6 +355,20 @@ main {
   border-color: rgba(255, 211, 111, 0.18);
 }
 
+.status-pill.is-resolved-yes,
+.claim-pill.is-claimable {
+  color: var(--yes);
+  background: rgba(102, 227, 166, 0.12);
+  border-color: rgba(102, 227, 166, 0.18);
+}
+
+.status-pill.is-resolved-no,
+.claim-pill.is-lost {
+  color: var(--no);
+  background: rgba(255, 138, 122, 0.12);
+  border-color: rgba(255, 138, 122, 0.18);
+}
+
 .market-card h3,
 .preview-card h3 {
   margin-top: 16px;
@@ -388,6 +438,12 @@ select {
   color: var(--text);
 }
 
+.field-hint {
+  margin: -4px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .preview-list {
   margin: 16px 0 0;
   padding-left: 18px;
@@ -424,19 +480,37 @@ select {
   color: var(--accent);
 }
 
-.claim-pill.is-win {
-  background: rgba(102, 227, 166, 0.12);
-  color: var(--yes);
+.claim-pill.is-locking {
+  background: rgba(255, 211, 111, 0.12);
+  color: var(--warning);
 }
 
-.claim-pill.is-loss {
-  background: rgba(255, 138, 122, 0.12);
-  color: var(--no);
+.claim-pill.is-claimed {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text);
+}
+
+.primary-button:disabled,
+.yes-button:disabled,
+.no-button:disabled,
+.ghost-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.position-empty {
+  padding: 22px;
+  border: 1px dashed var(--line);
+  border-radius: 24px;
+  color: var(--muted);
+  text-align: center;
 }
 
 @media (max-width: 960px) {
   .hero,
   .wallet-panel,
+  .demo-card,
   .panel-header,
   .create-layout,
   .market-grid,
@@ -471,7 +545,8 @@ select {
   .hero,
   .create-card,
   .preview-card,
-  .market-card {
+  .market-card,
+  .demo-card {
     padding: 18px;
     border-radius: 20px;
   }

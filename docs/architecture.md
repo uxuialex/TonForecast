@@ -121,7 +121,7 @@ Position state is derived per user:
 
 Use only objective, short-term price markets in MVP:
 
-- assets: `TON`, `BTC`, `ETH`
+- assets: `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
 - durations: `30s`, `60s`
 - directions: `above`, `below`
 

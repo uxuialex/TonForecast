@@ -24,8 +24,8 @@
           <p class="eyebrow">Telegram Mini App • TON</p>
           <h1>TonForecast</h1>
           <p class="hero-copy">
-            Short-term onchain prediction markets for TON, BTC, and ETH. Create a
-            market, place a bet, wait for automatic resolution, then claim.
+            Short-term onchain prediction markets for TON ecosystem tokens. Create
+            a market, place a bet, wait for automatic resolution, then claim.
           </p>
         </div>
         <div class="hero-actions">
@@ -44,10 +44,28 @@
         </div>
       </section>
 
-      <section class="ticker-strip" aria-label="Live prices">
-        <div class="ticker-pill">TON <span>$3.42</span> <em>+1.8%</em></div>
-        <div class="ticker-pill">BTC <span>$68,450</span> <em>-0.4%</em></div>
-        <div class="ticker-pill">ETH <span>$3,540</span> <em>+0.9%</em></div>
+      <section id="price-strip" class="ticker-strip" aria-label="Live prices">
+        <div class="ticker-pill is-loading">Loading live prices...</div>
+      </section>
+
+      <section class="demo-card">
+        <div>
+          <p class="section-kicker">Demo Path</p>
+          <h2>One clean flow</h2>
+          <p class="demo-copy">
+            Create a 5m STON market, take one side, let resolver settle it automatically,
+            then claim from the winning wallet.
+          </p>
+        </div>
+        <ol class="demo-steps">
+          <li>Create 5m market</li>
+          <li>Bet YES / NO</li>
+          <li>Wait for auto-resolve</li>
+          <li>Claim payout</li>
+        </ol>
+        <p id="action-feedback" class="action-feedback">
+          Connect a wallet to unlock create, bet, and claim actions.
+        </p>
       </section>
 
       <nav class="tabbar" aria-label="Sections">
@@ -67,7 +85,7 @@
               <button class="filter is-active" data-status="">All</button>
               <button class="filter" data-status="OPEN">Open</button>
               <button class="filter" data-status="LOCKED">Resolving</button>
-              <button class="filter" data-status="RESOLVED_YES">Resolved</button>
+              <button class="filter" data-status="RESOLVED">Resolved</button>
             </div>
           </div>
 
@@ -89,37 +107,27 @@
                 Asset
                 <select id="asset">
                   <option value="TON">TON</option>
-                  <option value="BTC">BTC</option>
-                  <option value="ETH">ETH</option>
-                </select>
-              </label>
-
-              <label>
-                Direction
-                <select id="direction">
-                  <option value="above">above</option>
-                  <option value="below">below</option>
+                  <option value="STON">STON</option>
+                  <option value="tsTON">tsTON</option>
+                  <option value="UTYA">UTYA</option>
+                  <option value="MAJOR">MAJOR</option>
+                  <option value="REDO">REDO</option>
                 </select>
               </label>
 
               <label>
                 Duration
                 <select id="duration">
-                  <option value="30">30 sec</option>
-                  <option value="60" selected>60 sec</option>
+                  <option value="300" selected>5 min</option>
+                  <option value="900">15 min</option>
+                  <option value="1800">30 min</option>
+                  <option value="3600">60 min</option>
                 </select>
               </label>
 
-              <label>
-                Threshold preset
-                <select id="threshold">
-                  <option value="3.42">3.42</option>
-                  <option value="3.43">3.43</option>
-                  <option value="3.44">3.44</option>
-                </select>
-              </label>
+              <p id="create-current-price" class="field-hint">Current price: loading...</p>
 
-              <button type="button" class="primary-button wide-button">
+              <button id="create-market-button" type="button" class="primary-button wide-button">
                 Create Market
               </button>
             </form>
@@ -144,32 +152,10 @@
             </div>
           </div>
 
-          <div class="positions-list">
-            <article class="position-row">
-              <div>
-                <p class="position-title">TON above $3.42 in 60s</p>
-                <p class="position-meta">Bet YES • 15 TON</p>
-              </div>
-              <span class="claim-pill is-open">OPEN</span>
-            </article>
-
-            <article class="position-row">
-              <div>
-                <p class="position-title">BTC below $68,450 in 30s</p>
-                <p class="position-meta">Bet NO • 24 TON</p>
-              </div>
-              <span class="claim-pill is-win">CLAIMABLE</span>
-              <button class="primary-button compact-button">Claim</button>
-            </article>
-
-            <article class="position-row">
-              <div>
-                <p class="position-title">ETH above $3,500 in 60s</p>
-                <p class="position-meta">Bet YES • 10 TON</p>
-              </div>
-              <span class="claim-pill is-loss">LOST</span>
-            </article>
-          </div>
+          <p id="positions-feedback" class="market-feedback">
+            Connect a wallet to load positions.
+          </p>
+          <div id="positions-list" class="positions-list"></div>
         </section>
       </main>
     </div>

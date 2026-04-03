@@ -2,10 +2,26 @@
 
 Settlement worker for expired markets.
 
-Current scaffold:
+Current production path:
 
-- selects due `LOCKED` markets
-- computes `YES/NO` from threshold and final price
-- logs the future resolve command in dry-run mode
+- create a dedicated resolver wallet
+- deploy market contract with that wallet set as `resolverAddress`
+- run the auto-resolver with the resolver wallet mnemonic in env
+- the worker polls `resolve_time`, fetches live price from STON API, and sends `resolve_market` automatically
 
-Next step is replacing mock inputs with onchain market reads and real price fetches.
+Example:
+
+```bash
+cp .env.example .env.local
+# fill RESOLVER_MNEMONIC
+# for Tonkeeper wallets keep RESOLVER_WALLET_VERSION=v5r1
+# add TON_API_KEY if you use toncenter and hit 429 rate limits
+
+MARKET_ADDRESS=EQ... npm run resolver:auto
+```
+
+Or pass the market address directly:
+
+```bash
+RESOLVER_MNEMONIC="..." npm run resolver:auto -- EQ...
+```

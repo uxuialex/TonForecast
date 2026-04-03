@@ -5,10 +5,16 @@ const port = Number(process.env.PORT ?? "3001");
 
 const server = createServer(async (req, res) => {
   const requestUrl = `http://${req.headers.host ?? "localhost"}${req.url ?? "/"}`;
-  const request = new Request(requestUrl, {
+  const init = {
     method: req.method,
     headers: req.headers,
-  });
+  };
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    init.body = req;
+    init.duplex = "half";
+  }
+
+  const request = new Request(requestUrl, init);
 
   const response = await handleRequest(request);
 

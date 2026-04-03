@@ -16,4 +16,4 @@ services:
     working_dir: /app
     command: ["node", "apps/api/src/index.js"]
     volumes:
-      - ./:/app:ro
+      - ./:/app
