@@ -1313,12 +1313,13 @@ if (window.TON_CONNECT_UI?.TonConnectUI) {
     const tonConnectUI = new window.TON_CONNECT_UI.TonConnectUI({
       manifestUrl,
       buttonRootId: "ton-connect",
-      actionsConfiguration: isTelegram
-        ? {
-            twaReturnUrl: TWA_RETURN_URL,
-          }
-        : undefined,
     });
+
+    if (isTelegram) {
+      tonConnectUI.uiOptions = {
+        twaReturnUrl: TWA_RETURN_URL,
+      };
+    }
 
     state.tonConnectUI = tonConnectUI;
     syncWalletState(tonConnectUI.wallet);
