@@ -109,6 +109,7 @@ const state = {
   },
   createContextLoaded: false,
   positionsLoaded: false,
+  pendingCreateAddress: null,
 };
 
 let panelTransitionInFlight = false;
@@ -264,6 +265,11 @@ function getStatusClass(status) {
   return "status-pill";
 }
 
+function getDisplayStatusClass(market, status) {
+  if (market.isPendingChain) return "status-pill is-pending-chain";
+  return getStatusClass(status);
+}
+
 function getClaimClass(status) {
   if (status === "CLAIMABLE") return "claim-pill is-claimable";
   if (status === "CLAIMED") return "claim-pill is-claimed";
@@ -283,6 +289,19 @@ function getClaimButtonLabel(position) {
 
 function getExplorerUrl(address) {
   return `https://tonviewer.com/${encodeURIComponent(address)}`;
+}
+
+function getMarketActionHint(market, effectiveStatus) {
+  if (market.isPendingChain) {
+    return "Waiting for blockchain confirmation before the first bet.";
+  }
+  if (effectiveStatus === "LOCKED") {
+    return "Betting is closed. Auto-resolve should settle this market next.";
+  }
+  if (effectiveStatus.startsWith("RESOLVED")) {
+    return "Settlement is final. Claim from My Positions on the winning side.";
+  }
+  return "";
 }
 
 function getOutcomeLabel(outcome) {
@@ -434,13 +453,15 @@ function renderMarkets(items) {
       const effectiveStatus = deriveEffectiveStatus(market);
       const statusMeta = buildMarketStatusMeta(market);
       const canBet = state.wallet && effectiveStatus === "OPEN";
+      const actionHint = getMarketActionHint(market, effectiveStatus);
+      const isPendingCreate = state.pendingCreateAddress === market.contractAddress;
 
       return `
-        <article class="market-card" data-market-address="${market.contractAddress}">
+        <article class="market-card ${isPendingCreate ? "is-pending-market" : ""}" data-market-address="${market.contractAddress}">
           <div class="market-topline">
             ${assetBadgeHtml(market.token, market.iconUrl)}
             <div class="market-topline__meta">
-              <span class="${getStatusClass(effectiveStatus)}">${market.statusLabel}</span>
+              <span class="${getDisplayStatusClass(market, effectiveStatus)}">${market.statusLabel}</span>
               <a
                 class="market-link"
                 href="${getExplorerUrl(market.contractAddress)}"
@@ -467,6 +488,7 @@ function renderMarkets(items) {
             <button class="yes-button" data-action="bet" data-side="YES" ${canBet && market.onchainReady !== false ? "" : "disabled"}>${buildBetButtonLabel(market, "YES")}</button>
             <button class="no-button" data-action="bet" data-side="NO" ${canBet && market.onchainReady !== false ? "" : "disabled"}>${buildBetButtonLabel(market, "NO")}</button>
           </div>
+          ${actionHint ? `<p class="market-note">${actionHint}</p>` : ""}
         </article>
       `;
     })
@@ -623,6 +645,7 @@ async function handleCreateIntent() {
 
     setActionFeedback(`Sign create for ${intent.draft.question}`);
     await sendTonTransaction(intent);
+    state.pendingCreateAddress = intent.draft.contractAddress;
     await requestJson("/api/actions/create-confirm", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -632,13 +655,40 @@ async function handleCreateIntent() {
     });
 
     setActionFeedback(
-      `Market submitted: ${intent.draft.question}. Auto-resolver is scheduled, you only need to claim later.`,
+      `Market submitted: ${intent.draft.question}. Waiting for blockchain confirmation before betting unlocks.`,
     );
     await Promise.all([loadMarkets(state.activeMarketStatus), loadCreateContext()]);
     switchPanel("markets");
+    waitForMarketReady(intent.draft.contractAddress).catch((error) => {
+      console.warn("waitForMarketReady failed", error);
+    });
   } catch (error) {
+    state.pendingCreateAddress = null;
     setActionFeedback(`Create failed: ${error.message}`);
   }
+}
+
+async function waitForMarketReady(contractAddress) {
+  const deadlineMs = Date.now() + 45_000;
+  while (Date.now() < deadlineMs) {
+    try {
+      const market = await requestJson(`/api/markets/${encodeURIComponent(contractAddress)}`);
+      if (market.onchainReady !== false) {
+        state.pendingCreateAddress = null;
+        await loadMarkets(state.activeMarketStatus);
+        setActionFeedback("Market confirmed onchain. Betting is now unlocked.");
+        return;
+      }
+    } catch {
+      // Keep polling until the contract is readable or timeout is reached.
+    }
+
+    setActionFeedback("Waiting for blockchain confirmation before the first bet...");
+    await new Promise((resolve) => window.setTimeout(resolve, 2500));
+  }
+
+  await loadMarkets(state.activeMarketStatus);
+  setActionFeedback("Market is still waiting for blockchain confirmation. Betting will unlock automatically once the contract becomes readable.");
 }
 
 async function handleBetIntent(contractAddress, side) {

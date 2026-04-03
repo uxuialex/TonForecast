@@ -591,6 +591,11 @@ main {
   padding: 18px;
 }
 
+.market-card.is-pending-market {
+  border-color: rgba(79, 172, 254, 0.22);
+  box-shadow: 0 0 0 1px rgba(79, 172, 254, 0.08), 0 0 28px rgba(79, 172, 254, 0.08);
+}
+
 .market-topline {
   display: flex;
   justify-content: space-between;
@@ -672,6 +677,14 @@ dd {
   gap: 8px;
 }
 
+.market-note {
+  margin-top: 10px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--dim);
+}
+
 /* --- Asset badges --------------------------------------------- */
 
 .asset-badge {
@@ -741,6 +754,12 @@ dd {
   color: var(--warn);
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(251, 191, 36, 0.22);
+}
+
+.status-pill.is-pending-chain {
+  color: var(--accent);
+  background: rgba(79, 172, 254, 0.12);
+  border-color: rgba(79, 172, 254, 0.2);
 }
 
 /* --- Buttons -------------------------------------------------- */

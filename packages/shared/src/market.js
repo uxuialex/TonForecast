@@ -168,12 +168,13 @@ export function buildMarketView(market, nowSec = Math.floor(Date.now() / 1000)) 
   const effectiveStatus = deriveMarketStatus(market, nowSec);
   const countdownTarget = effectiveStatus === "OPEN" ? market.closeAt : market.resolveAt;
   const countdownSeconds = Math.max(0, Number(countdownTarget) - nowSec);
+  const isPendingChain = market.onchainReady === false;
 
   return {
     ...market,
     effectiveStatus,
     directionLabel: getDirectionLabel(market.direction),
-    statusLabel: getMarketStatusLabel(effectiveStatus),
+    statusLabel: isPendingChain ? "Awaiting chain" : getMarketStatusLabel(effectiveStatus),
     outcomeLabel: getMarketOutcomeLabel(market.outcome),
     currentPriceLabel: `$${formatAssetUsd(market.currentPrice, market.token)}`,
     thresholdLabel: `$${formatAssetUsd(market.threshold, market.token)}`,
@@ -182,6 +183,7 @@ export function buildMarketView(market, nowSec = Math.floor(Date.now() / 1000)) 
     noPoolLabel: `${formatTon(market.noPool)} TON`,
     countdownSeconds,
     countdownLabel: formatCountdown(countdownSeconds),
+    isPendingChain,
     question: market.question ?? buildMarketQuestion(market),
   };
 }
