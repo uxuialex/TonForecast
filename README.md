@@ -60,10 +60,10 @@ One clean demo path:
 
 - Frontend: static Telegram Mini App in [`apps/miniapp`](apps/miniapp)
 - Wallet: TON Connect
-- Backend API: Node.js in [`/Users/alex/Documents/New project/apps/api`](/Users/alex/Documents/New%20project/apps/api)
-- Contracts: Tolk in [`/Users/alex/Documents/New project/contracts`](/Users/alex/Documents/New%20project/contracts)
-- Shared market/UI logic: [`/Users/alex/Documents/New project/packages/shared`](/Users/alex/Documents/New%20project/packages/shared)
-- Resolver scripts: [`/Users/alex/Documents/New project/scripts`](/Users/alex/Documents/New%20project/scripts)
+- Backend API: Node.js in [`apps/api`](apps/api)
+- Contracts: Tolk in [`contracts`](contracts)
+- Shared market/UI logic: [`packages/shared`](packages/shared)
+- Resolver scripts: [`scripts`](scripts)
 - Deploy: Docker Compose + Nginx + GitHub Actions
 
 ## Repository Layout
