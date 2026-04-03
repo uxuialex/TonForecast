@@ -88,6 +88,7 @@ const actionFeedbackEl = document.querySelector("#action-feedback");
 const runtimeModeEl = document.querySelector("#runtime-mode");
 
 const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
+const TWA_RETURN_URL = "https://t.me/chatchatgpt_bot/TON_Forecast";
 
 const state = {
   activePanel: "markets",
@@ -1308,16 +1309,29 @@ positionsListEl.addEventListener("click", (event) => {
 });
 
 if (window.TON_CONNECT_UI?.TonConnectUI) {
-  const tonConnectUI = new window.TON_CONNECT_UI.TonConnectUI({
-    manifestUrl,
-    buttonRootId: "ton-connect",
-  });
+  try {
+    const tonConnectUI = new window.TON_CONNECT_UI.TonConnectUI({
+      manifestUrl,
+      buttonRootId: "ton-connect",
+      actionsConfiguration: isTelegram
+        ? {
+            twaReturnUrl: TWA_RETURN_URL,
+          }
+        : undefined,
+    });
 
-  state.tonConnectUI = tonConnectUI;
-  syncWalletState(tonConnectUI.wallet);
-  tonConnectUI.onStatusChange((wallet) => {
-    syncWalletState(wallet);
-  });
+    state.tonConnectUI = tonConnectUI;
+    syncWalletState(tonConnectUI.wallet);
+    tonConnectUI.onStatusChange((wallet) => {
+      syncWalletState(wallet);
+    });
+  } catch (error) {
+    const message = `Wallet SDK init failed: ${error instanceof Error ? error.message : String(error)}`;
+    walletStatusEl.textContent = "Wallet unavailable";
+    walletAddressEl.textContent = message;
+    setCreateNotice(message, "error");
+    console.error(message);
+  }
 }
 
 setInterval(() => {
