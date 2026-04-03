@@ -113,11 +113,13 @@ describe('TonForecastMarket happy path', () => {
             from: contract.address,
             to: yesBettor.address,
             success: true,
+            value: toNano('14.9'),
         });
         expect(claimResult.transactions).toHaveTransaction({
             from: contract.address,
             to: resolver.address,
             success: true,
+            value: toNano('0.1'),
         });
 
         const userStake = await contract.getUserStake(yesBettor.address);
