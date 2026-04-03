@@ -33,6 +33,7 @@ const PRECISION_BY_ASSET = {
 };
 const MARKET_VIEW_CACHE_TTL_MS = 8_000;
 const POSITION_READ_CONCURRENCY = 2;
+const POSITION_SCAN_LIMIT = 12;
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
 
@@ -237,7 +238,9 @@ export async function listPositions(userAddress) {
   const markets = await buildMarkets();
   const marketMap = new Map(markets.map((item) => [item.contractAddress, item]));
 
-  const sortedRecords = [...records].sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+  const sortedRecords = [...records]
+    .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
+    .slice(0, POSITION_SCAN_LIMIT);
   const entries = await mapConcurrent(
     sortedRecords,
     POSITION_READ_CONCURRENCY,

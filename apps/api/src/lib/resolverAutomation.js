@@ -5,6 +5,8 @@ const activeResolvers = new Map();
 const resolverRetryCounts = new Map();
 const INITIAL_DELAY_MS = 10_000;
 const MAX_RETRY_DELAY_MS = 60_000;
+const BOOTSTRAP_LOOKBACK_SEC = 15 * 60;
+const BOOTSTRAP_MAX_MARKETS = 6;
 
 function getNpmCommand() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
@@ -69,7 +71,13 @@ export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
 }
 
 export function bootstrapAutoResolvers() {
-  for (const [index, record] of listMarketRecords().entries()) {
+  const nowSec = Math.floor(Date.now() / 1000);
+  const candidates = listMarketRecords()
+    .filter((record) => Number(record.resolveAt) >= nowSec - BOOTSTRAP_LOOKBACK_SEC)
+    .sort((left, right) => Number(left.resolveAt) - Number(right.resolveAt))
+    .slice(0, BOOTSTRAP_MAX_MARKETS);
+
+  for (const [index, record] of candidates.entries()) {
     scheduleAutoResolve(record.contractAddress, 1_000 + index * 1_500);
   }
 }

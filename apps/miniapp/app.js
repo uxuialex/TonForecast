@@ -804,12 +804,17 @@ async function loadPositions() {
       : "No positions yet.";
     renderPositions(state.positions);
   } catch (error) {
-    state.positions = [];
     state.positionsLoaded = false;
     state.positionsLoading = false;
     positionsFeedbackEl.classList.remove("is-loading");
-    positionsFeedbackEl.textContent = `Failed to load positions: ${error.message}`;
-    positionsListEl.innerHTML = "";
+    positionsFeedbackEl.textContent = state.positions.length
+      ? `Couldn't refresh positions right now. Showing last known state.`
+      : `Failed to load positions: ${error.message}`;
+    if (!state.positions.length) {
+      positionsListEl.innerHTML = "";
+    } else {
+      renderPositions(state.positions);
+    }
   }
 }
 
@@ -1328,10 +1333,15 @@ setInterval(() => {
   if (getActivePanelName() === "create") {
     loadCreateContext();
   }
-  if (state.wallet && getActivePanelName() === "profile") {
+  if (
+    state.wallet &&
+    getActivePanelName() === "profile" &&
+    !state.pendingBet &&
+    !state.pendingClaim
+  ) {
     loadPositions();
   }
-}, 10000);
+}, 20000);
 
 loadPrices();
 loadMarkets(state.activeMarketStatus);
