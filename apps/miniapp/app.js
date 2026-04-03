@@ -20,6 +20,9 @@ const TOKEN_META = {
   REDO: { color: "#10B981" },
 };
 
+const ASSET_ICON_VERSION = "20260403d";
+const CREATE_ASSET_OPTIONS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
+
 const MARKET_FILTER_OPTIONS = [
   { value: "OPEN", label: "Active" },
   { value: "", label: "All" },
@@ -28,7 +31,7 @@ const MARKET_FILTER_OPTIONS = [
 ];
 
 function getTokenIconUrl(symbol) {
-  return `/api/assets/icons/${encodeURIComponent(symbol)}`;
+  return `/api/assets/icons/${encodeURIComponent(symbol)}?v=${ASSET_ICON_VERSION}`;
 }
 
 function tokenIconHtml(symbol, iconUrl = getTokenIconUrl(symbol), variant = "default") {
@@ -55,6 +58,13 @@ function assetBadgeHtml(symbol, iconUrl) {
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel");
 const assetEl = document.querySelector("#asset");
+const assetPickerEl = document.querySelector("#asset-picker");
+const assetPickerTriggerEl = document.querySelector("#asset-picker-trigger");
+const assetPickerValueEl = document.querySelector("#asset-picker-value");
+const assetPickerMenuEl = document.querySelector("#asset-picker-menu");
+const assetPickerOptionEls = Array.from(
+  document.querySelectorAll(".asset-picker__option"),
+);
 const durationEl = document.querySelector("#duration");
 const previewQuestionEl = document.querySelector("#preview-question");
 const walletStatusEl = document.querySelector("#wallet-status");
@@ -175,6 +185,15 @@ function shortAddress(value) {
 
 function setActionFeedback(message) {
   actionFeedbackEl.textContent = message;
+}
+
+function buildAssetPickerItemHtml(asset) {
+  return `
+    <span class="asset-picker__item">
+      ${tokenIconHtml(asset)}
+      <span class="asset-picker__label">${asset}</span>
+    </span>
+  `;
 }
 
 async function promptWalletConnection(contextLabel = "this action") {
@@ -685,6 +704,21 @@ function closeMarketFilter() {
   }, 180);
 }
 
+function closeAssetPicker() {
+  if (!assetPickerEl || !assetPickerTriggerEl || !assetPickerMenuEl) {
+    return;
+  }
+
+  assetPickerEl.classList.remove("is-open");
+  assetPickerMenuEl.classList.remove("is-visible");
+  assetPickerTriggerEl.setAttribute("aria-expanded", "false");
+  window.setTimeout(() => {
+    if (!assetPickerEl.classList.contains("is-open")) {
+      assetPickerMenuEl.hidden = true;
+    }
+  }, 180);
+}
+
 function syncMarketFilterUi() {
   if (!marketFilterLabelEl) {
     return;
@@ -696,6 +730,20 @@ function syncMarketFilterUi() {
       "is-selected",
       option.dataset.filterValue === state.activeMarketStatus,
     );
+  });
+}
+
+function syncAssetPickerUi() {
+  if (!assetPickerValueEl) {
+    return;
+  }
+
+  const selectedAsset = assetEl.value || CREATE_ASSET_OPTIONS[0];
+  assetPickerValueEl.innerHTML = buildAssetPickerItemHtml(selectedAsset);
+  assetPickerOptionEls.forEach((option) => {
+    const asset = option.dataset.assetValue;
+    option.innerHTML = buildAssetPickerItemHtml(asset);
+    option.classList.toggle("is-selected", asset === selectedAsset);
   });
 }
 
@@ -738,6 +786,55 @@ if (marketFilterTriggerEl && marketFilterMenuEl) {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeMarketFilter();
+    }
+  });
+}
+
+if (assetPickerTriggerEl && assetPickerMenuEl) {
+  syncAssetPickerUi();
+
+  assetPickerTriggerEl.addEventListener("click", () => {
+    const nextOpen = !assetPickerEl.classList.contains("is-open");
+    assetPickerEl.classList.toggle("is-open", nextOpen);
+    assetPickerTriggerEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    if (nextOpen) {
+      assetPickerMenuEl.hidden = false;
+      requestAnimationFrame(() => {
+        assetPickerMenuEl.classList.add("is-visible");
+      });
+      return;
+    }
+
+    closeAssetPicker();
+  });
+
+  assetPickerMenuEl.addEventListener("click", (event) => {
+    const option = event.target.closest(".asset-picker__option");
+    if (!option) {
+      return;
+    }
+
+    const asset = option.dataset.assetValue;
+    if (!asset || asset === assetEl.value) {
+      closeAssetPicker();
+      return;
+    }
+
+    assetEl.value = asset;
+    syncAssetPickerUi();
+    closeAssetPicker();
+    assetEl.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!assetPickerEl.contains(event.target)) {
+      closeAssetPicker();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeAssetPicker();
     }
   });
 }

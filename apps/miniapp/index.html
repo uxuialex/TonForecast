@@ -80,14 +80,27 @@
           <form class="create-card glass-card">
             <label>
               <span class="label-text">Asset</span>
-              <select id="asset">
-                <option value="TON">TON</option>
-                <option value="STON">STON</option>
-                <option value="tsTON">tsTON</option>
-                <option value="UTYA">UTYA</option>
-                <option value="MAJOR">MAJOR</option>
-                <option value="REDO">REDO</option>
-              </select>
+              <input id="asset" type="hidden" value="TON" />
+              <div id="asset-picker" class="asset-picker">
+                <button
+                  id="asset-picker-trigger"
+                  class="asset-picker__trigger"
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                >
+                  <span id="asset-picker-value"></span>
+                  <span class="market-filter__caret" aria-hidden="true"></span>
+                </button>
+                <div id="asset-picker-menu" class="asset-picker__menu" role="listbox" hidden>
+                  <button class="asset-picker__option is-selected" type="button" data-asset-value="TON"></button>
+                  <button class="asset-picker__option" type="button" data-asset-value="STON"></button>
+                  <button class="asset-picker__option" type="button" data-asset-value="tsTON"></button>
+                  <button class="asset-picker__option" type="button" data-asset-value="UTYA"></button>
+                  <button class="asset-picker__option" type="button" data-asset-value="MAJOR"></button>
+                  <button class="asset-picker__option" type="button" data-asset-value="REDO"></button>
+                </div>
+              </div>
             </label>
 
             <label>

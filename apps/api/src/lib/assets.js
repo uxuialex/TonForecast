@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 
+const ASSET_ICON_VERSION = "20260403d";
+
 const ASSET_ICON_REGISTRY = {
   TON: {
     fileName: "ton.png",
@@ -37,7 +39,7 @@ export function getAssetIconUrl(asset) {
     return null;
   }
 
-  return `/api/assets/icons/${encodeURIComponent(asset)}`;
+  return `/api/assets/icons/${encodeURIComponent(asset)}?v=${ASSET_ICON_VERSION}`;
 }
 
 export async function readAssetIcon(asset) {
