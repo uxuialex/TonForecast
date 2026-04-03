@@ -235,22 +235,17 @@ export async function getMarketById(marketId) {
 
 export async function listPositions(userAddress) {
   const records = listMarketRecords();
-  const markets = await buildMarkets();
-  const marketMap = new Map(markets.map((item) => [item.contractAddress, item]));
-
   const sortedRecords = [...records]
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
     .slice(0, POSITION_SCAN_LIMIT);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const snapshotMap = await getAssetSnapshotMap();
   const entries = await mapConcurrent(
     sortedRecords,
     POSITION_READ_CONCURRENCY,
     async (record) => {
-      const marketView = marketMap.get(record.contractAddress);
-      if (!marketView) {
-        return null;
-      }
-
       try {
+        const marketView = await buildMarketFromRecord(record, snapshotMap, nowSec);
         const stake = await getCachedUserStake(record.contractAddress, userAddress);
         const amountYesTon = nanosToTonDecimal(stake.yesAmount);
         const amountNoTon = nanosToTonDecimal(stake.noAmount);
