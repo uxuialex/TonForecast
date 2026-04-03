@@ -1,8 +1,35 @@
-if (window.Telegram?.WebApp) {
-  const tg = window.Telegram.WebApp;
+const tg = window.Telegram?.WebApp;
+const isTelegram = !!tg;
+
+document.documentElement.dataset.telegram = isTelegram ? "true" : "false";
+document.body.classList.toggle("is-telegram", isTelegram);
+
+if (isTelegram) {
+  tg.ready();
   tg.expand();
   tg.setHeaderColor("#080b16");
   tg.setBackgroundColor("#080b16");
+}
+
+const TOKEN_META = {
+  TON:   { color: "#0098EA", icon: "https://assets.coingecko.com/coins/images/17980/small/ton_symbol.png" },
+  STON:  { color: "#0088CC", icon: "https://assets.coingecko.com/coins/images/28316/small/stonficoin.png" },
+  tsTON: { color: "#7C3AED" },
+  UTYA:  { color: "#F59E0B" },
+  MAJOR: { color: "#2563EB", icon: "https://assets.coingecko.com/coins/images/39939/small/major.png" },
+  REDO:  { color: "#10B981" },
+};
+
+function tokenIconHtml(symbol) {
+  const meta = TOKEN_META[symbol] || {};
+  const color = meta.color || "#6366f1";
+  const letter = `<span class="token-icon token-icon--letter" style="background:${color}">${symbol[0]}</span>`;
+  if (!meta.icon) return letter;
+  return (
+    `<img class="token-icon" src="${meta.icon}" alt="${symbol}" ` +
+    `onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />` +
+    `<span class="token-icon token-icon--letter" style="display:none;background:${color}">${symbol[0]}</span>`
+  );
 }
 
 const tabs = document.querySelectorAll(".tab");
@@ -16,18 +43,20 @@ const marketGridEl = document.querySelector("#market-grid");
 const marketFeedbackEl = document.querySelector("#markets-feedback");
 const positionsFeedbackEl = document.querySelector("#positions-feedback");
 const positionsListEl = document.querySelector("#positions-list");
-const filterEls = document.querySelectorAll(".filter");
+const marketFilterEl = document.querySelector("#market-filter");
 const priceStripEl = document.querySelector("#price-strip");
 const createCurrentPriceEl = document.querySelector("#create-current-price");
 const createMarketButtonEl = document.querySelector("#create-market-button");
 const actionFeedbackEl = document.querySelector("#action-feedback");
+const runtimeModeEl = document.querySelector("#runtime-mode");
 
 const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
 
 const state = {
-  activeMarketStatus: "",
+  activeMarketStatus: "OPEN",
   wallet: null,
   tonConnectUI: null,
+  isTelegram,
   markets: [],
   positions: [],
   prices: [],
@@ -42,6 +71,10 @@ const state = {
     blockedReason: "",
   },
 };
+
+if (runtimeModeEl) {
+  runtimeModeEl.textContent = isTelegram ? "Inside Telegram" : "Browser Preview";
+}
 
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
@@ -149,10 +182,7 @@ function syncWalletState(wallet) {
 }
 
 function buildBetButtonLabel(market, side) {
-  if (market.direction === "above") {
-    return side === "YES" ? "Bet Up" : "Bet Down";
-  }
-  return side === "YES" ? "Bet Down" : "Bet Up";
+  return side === "YES" ? "Yes" : "No";
 }
 
 async function requestJson(url, options = {}) {
@@ -175,9 +205,11 @@ function renderPrices(items) {
     .map(
       (item) => `
         <div class="ticker-pill">
-          ${item.asset}
-          <span>$${item.priceUsd}</span>
-          <em>${item.fallback ? "fallback" : "live"}</em>
+          ${tokenIconHtml(item.asset)}
+          <div class="ticker-info">
+            <span class="ticker-sym">${item.asset}</span>
+            <span class="ticker-price">$${item.priceUsd}</span>
+          </div>
         </div>
       `,
     )
@@ -468,7 +500,7 @@ async function handleBetIntent(contractAddress, side) {
   }
 
   try {
-    setActionFeedback(`Preparing ${side === "YES" ? "Up" : "Down"} bet...`);
+    setActionFeedback(`Preparing ${side === "YES" ? "Yes" : "No"} bet...`);
     const intent = await requestJson("/api/actions/bet-intent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -481,7 +513,7 @@ async function handleBetIntent(contractAddress, side) {
     });
 
     await sendTonTransaction(intent);
-    setActionFeedback(`Bet sent: ${side === "YES" ? "Up" : "Down"} on ${market.question}`);
+    setActionFeedback(`Bet sent: ${side === "YES" ? "Yes" : "No"} on ${market.question}`);
     await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
   } catch (error) {
     setActionFeedback(`Bet failed: ${error.message}`);
@@ -523,12 +555,9 @@ async function handleClaimIntent(positionId) {
   }
 }
 
-filterEls.forEach((filterEl) => {
-  filterEl.addEventListener("click", () => {
-    state.activeMarketStatus = filterEl.dataset.status ?? "";
-    filterEls.forEach((item) => item.classList.toggle("is-active", item === filterEl));
-    loadMarkets(state.activeMarketStatus);
-  });
+marketFilterEl.addEventListener("change", () => {
+  state.activeMarketStatus = marketFilterEl.value;
+  loadMarkets(state.activeMarketStatus);
 });
 
 [assetEl, durationEl].forEach((element) => {

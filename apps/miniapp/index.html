@@ -28,7 +28,10 @@
           <div class="brand__icon">TF</div>
           <div>
             <div class="brand__name">TonForecast</div>
-            <div class="brand__net">Testnet</div>
+            <div class="brand__chips">
+              <div class="brand__net">TON</div>
+              <div id="runtime-mode" class="brand__runtime">Browser Preview</div>
+            </div>
           </div>
         </div>
         <div id="ton-connect" class="ton-connect-slot"></div>
@@ -46,12 +49,12 @@
         <section class="panel is-active" data-panel="markets">
           <div class="panel-header">
             <h2>Markets</h2>
-          </div>
-          <div class="filter-group">
-            <button class="filter is-active" data-status="">All</button>
-            <button class="filter" data-status="OPEN">Open</button>
-            <button class="filter" data-status="LOCKED">Closed</button>
-            <button class="filter" data-status="RESOLVED">Resolved</button>
+            <select id="market-filter" class="market-filter">
+              <option value="OPEN" selected>Active</option>
+              <option value="">All</option>
+              <option value="LOCKED">Resolving</option>
+              <option value="RESOLVED">Resolved</option>
+            </select>
           </div>
           <p id="markets-feedback" class="section-feedback">Loading markets…</p>
           <div id="market-grid" class="market-grid"></div>
