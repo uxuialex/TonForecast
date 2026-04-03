@@ -785,6 +785,29 @@ dd {
   transform: scale(0.97);
 }
 
+.primary-button.is-busy,
+.yes-button.is-busy,
+.no-button.is-busy {
+  position: relative;
+  overflow: hidden;
+}
+
+.primary-button.is-busy::after,
+.yes-button.is-busy::after,
+.no-button.is-busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: busy-shimmer 1.05s linear infinite;
+}
+
 .primary-button {
   background: linear-gradient(135deg, #4facfe, #7c3aed);
   color: #fff;
@@ -817,6 +840,12 @@ dd {
   cursor: not-allowed;
   transform: none;
   box-shadow: none;
+}
+
+@keyframes busy-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
 }
 
 .wide-button {
