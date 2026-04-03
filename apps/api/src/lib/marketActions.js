@@ -45,6 +45,15 @@ function badRequest(message, status = 400) {
   return error;
 }
 
+function isDegradablePreflightError(error) {
+  if (isRateLimitError(error)) {
+    return true;
+  }
+
+  const message = error instanceof Error ? error.message : String(error);
+  return /timed out|fetch failed|eai_again|network/i.test(message);
+}
+
 function ensureSupportedAsset(asset) {
   if (!SUPPORTED_ASSETS.includes(asset)) {
     throw badRequest("asset must be TON, STON, tsTON, UTYA, MAJOR or REDO");
@@ -256,7 +265,7 @@ export async function createBetIntent({
       throw badRequest("Bet blocked: this wallet already bet YES on this market.", 409);
     }
   } catch (error) {
-    if (!isRateLimitError(error)) {
+    if (!isDegradablePreflightError(error)) {
       throw error;
     }
 
@@ -288,29 +297,50 @@ export async function createClaimIntent({ contractAddress, userAddress }) {
     throw badRequest("Market not found", 404);
   }
 
-  const state = await getCachedMarketState(record.contractAddress);
-  const stake = await getCachedUserStake(record.contractAddress, userAddress);
+  let preflightStatus = "checked";
+  let resolvedStatus = null;
 
-  if (
-    state.status !== STATUS_RESOLVED_YES &&
-    state.status !== STATUS_RESOLVED_NO &&
-    state.status !== STATUS_RESOLVED_DRAW
-  ) {
-    throw badRequest("Claim blocked: market is not resolved yet.", 409);
-  }
-  if (stake.claimed) {
-    throw badRequest("Claim blocked: reward already claimed.", 409);
-  }
+  try {
+    const state = await getCachedMarketState(record.contractAddress);
+    const stake = await getCachedUserStake(record.contractAddress, userAddress);
 
-  const winningYes = state.resolvedOutcome === OUTCOME_YES;
-  const winningNo = state.resolvedOutcome === OUTCOME_NO;
-  const isDraw = state.resolvedOutcome === OUTCOME_DRAW;
-  const isWinner =
-    (winningYes && stake.yesAmount > 0n) ||
-    (winningNo && stake.noAmount > 0n) ||
-    (isDraw && (stake.yesAmount > 0n || stake.noAmount > 0n));
-  if (!isWinner) {
-    throw badRequest("Claim blocked: this wallet is not on the winning side.", 409);
+    if (
+      state.status !== STATUS_RESOLVED_YES &&
+      state.status !== STATUS_RESOLVED_NO &&
+      state.status !== STATUS_RESOLVED_DRAW
+    ) {
+      throw badRequest("Claim blocked: market is not resolved yet.", 409);
+    }
+    if (stake.claimed) {
+      throw badRequest("Claim blocked: reward already claimed.", 409);
+    }
+
+    const winningYes = state.resolvedOutcome === OUTCOME_YES;
+    const winningNo = state.resolvedOutcome === OUTCOME_NO;
+    const isDraw = state.resolvedOutcome === OUTCOME_DRAW;
+    const isWinner =
+      (winningYes && stake.yesAmount > 0n) ||
+      (winningNo && stake.noAmount > 0n) ||
+      (isDraw && (stake.yesAmount > 0n || stake.noAmount > 0n));
+    if (!isWinner) {
+      throw badRequest("Claim blocked: this wallet is not on the winning side.", 409);
+    }
+
+    resolvedStatus =
+      state.status === STATUS_RESOLVED_YES
+        ? "RESOLVED_YES"
+        : state.status === STATUS_RESOLVED_NO
+          ? "RESOLVED_NO"
+          : "RESOLVED_DRAW";
+  } catch (error) {
+    if (!isDegradablePreflightError(error)) {
+      throw error;
+    }
+
+    preflightStatus = "degraded";
+    console.warn(
+      `[api] claim preflight degraded for ${record.contractAddress}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   return {
@@ -322,12 +352,8 @@ export async function createClaimIntent({ contractAddress, userAddress }) {
     },
     market: {
       contractAddress: record.contractAddress,
-      resolvedStatus:
-        state.status === STATUS_RESOLVED_YES
-          ? "RESOLVED_YES"
-          : state.status === STATUS_RESOLVED_NO
-            ? "RESOLVED_NO"
-            : "RESOLVED_DRAW",
+      resolvedStatus,
     },
+    preflightStatus,
   };
 }

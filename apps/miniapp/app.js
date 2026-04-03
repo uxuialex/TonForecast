@@ -275,13 +275,23 @@ function normalizeActionError(message) {
     return "Unexpected error";
   }
 
-  return String(message)
+  const normalized = String(message)
     .replace(/^Create failed:\s*/i, "")
     .replace(/^Bet failed:\s*/i, "")
     .replace(/^Bet blocked:\s*/i, "")
     .replace(/^Claim failed:\s*/i, "")
     .replace(/^Claim blocked:\s*/i, "")
     .trim();
+
+  if (/429|too many requests|rate limit/i.test(normalized)) {
+    return "Network is busy right now. Retry in a few seconds.";
+  }
+
+  if (/timed out|fetch failed|network/i.test(normalized)) {
+    return "Network is slow right now. Retry in a few seconds.";
+  }
+
+  return normalized;
 }
 
 function sleep(ms) {
