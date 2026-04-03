@@ -3,7 +3,7 @@ import { assetSnapshots as fallbackSnapshots } from "../data/mockMarkets.js";
 import { getAssetIconUrl } from "./assets.js";
 
 const STON_API_BASE = "https://api.ston.fi";
-const SNAPSHOT_CACHE_TTL_MS = 5_000;
+const SNAPSHOT_CACHE_TTL_MS = 15_000;
 const PRECISION_BY_ASSET = {
   TON: 4,
   STON: 6,

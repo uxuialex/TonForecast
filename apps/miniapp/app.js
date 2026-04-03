@@ -79,6 +79,7 @@ const runtimeModeEl = document.querySelector("#runtime-mode");
 const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
 
 const state = {
+  activePanel: "markets",
   activeMarketStatus: "OPEN",
   wallet: null,
   tonConnectUI: null,
@@ -96,6 +97,8 @@ const state = {
     canCreate: false,
     blockedReason: "",
   },
+  createContextLoaded: false,
+  positionsLoaded: false,
 };
 
 let panelTransitionInFlight = false;
@@ -112,6 +115,10 @@ function syncPriceStripVisibility(activePanelName) {
   priceStripEl.classList.toggle("is-hidden", activePanelName !== "markets");
 }
 
+function getActivePanelName() {
+  return state.activePanel;
+}
+
 function switchPanel(nextPanelName) {
   const currentPanel = document.querySelector(".panel.is-active");
   const nextPanel = document.querySelector(`.panel[data-panel="${nextPanelName}"]`);
@@ -121,6 +128,7 @@ function switchPanel(nextPanelName) {
   }
 
   panelTransitionInFlight = true;
+  state.activePanel = nextPanelName;
   syncPriceStripVisibility(nextPanelName);
   tabs.forEach((item) => item.classList.toggle("is-active", item.dataset.tab === nextPanelName));
 
@@ -142,6 +150,14 @@ function switchPanel(nextPanelName) {
     nextPanel.classList.add("is-visible");
     panelTransitionInFlight = false;
   }, 260);
+
+  if (nextPanelName === "create" && !state.createContextLoaded) {
+    loadCreateContext();
+  }
+
+  if (nextPanelName === "profile" && state.wallet && !state.positionsLoaded) {
+    loadPositions();
+  }
 }
 
 tabs.forEach((tab) => {
@@ -246,6 +262,7 @@ function syncWalletState(wallet) {
   state.wallet = wallet;
 
   if (!wallet) {
+    state.positionsLoaded = false;
     walletStatusEl.textContent = "Wallet not connected";
     walletAddressEl.textContent =
       "Connect a TON wallet to create markets, place bets, and claim payouts.";
@@ -260,12 +277,17 @@ function syncWalletState(wallet) {
     return;
   }
 
-  walletStatusEl.textContent = `${wallet.device.appName} connected`;
-  walletAddressEl.textContent = shortAddress(wallet.account.address);
+  walletStatusEl.textContent = "Wallet connected";
+  walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
   setActionFeedback(
     "Wallet connected. Create, bet, and claim now go through TON Connect.",
   );
-  loadPositions();
+  if (getActivePanelName() === "profile") {
+    loadPositions();
+  }
+  if (getActivePanelName() === "create") {
+    loadCreateContext();
+  }
   renderMarkets(state.markets);
   syncCreateButtonState();
 }
@@ -456,6 +478,7 @@ function renderPositions(items) {
 
 async function loadPositions() {
   if (!state.wallet) {
+    state.positionsLoaded = false;
     return;
   }
 
@@ -465,10 +488,12 @@ async function loadPositions() {
     const userAddress = encodeURIComponent(state.wallet.account.address);
     const payload = await requestJson(`/api/positions?userAddress=${userAddress}`);
     state.positions = payload.items ?? [];
+    state.positionsLoaded = true;
     positionsFeedbackEl.textContent = `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`;
     renderPositions(state.positions);
   } catch (error) {
     state.positions = [];
+    state.positionsLoaded = false;
     positionsFeedbackEl.textContent = `Failed to load positions: ${error.message}`;
     positionsListEl.innerHTML = "";
   }
@@ -492,6 +517,7 @@ async function loadCreateContext() {
       canCreate: Boolean(payload.canCreate),
       blockedReason: payload.blockedReason ?? "",
     };
+    state.createContextLoaded = true;
   } catch (error) {
     state.createContext = {
       asset: assetEl.value,
@@ -503,6 +529,7 @@ async function loadCreateContext() {
       canCreate: false,
       blockedReason: error.message,
     };
+    state.createContextLoaded = false;
     createCurrentPriceEl.textContent = `Current price unavailable: ${error.message}`;
   }
 
@@ -768,14 +795,17 @@ setInterval(() => {
 }, 1000);
 
 setInterval(() => {
-  loadPrices();
-  loadMarkets(state.activeMarketStatus);
-  loadCreateContext();
-  if (state.wallet) {
+  if (getActivePanelName() === "markets") {
+    loadPrices();
+    loadMarkets(state.activeMarketStatus);
+  }
+  if (getActivePanelName() === "create") {
+    loadCreateContext();
+  }
+  if (state.wallet && getActivePanelName() === "profile") {
     loadPositions();
   }
 }, 20000);
 
 loadPrices();
 loadMarkets(state.activeMarketStatus);
-loadCreateContext();

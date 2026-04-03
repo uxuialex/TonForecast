@@ -29,10 +29,9 @@ const PRECISION_BY_ASSET = {
   MAJOR: 6,
   REDO: 6,
 };
-const MARKET_VIEW_CACHE_TTL_MS = 4_000;
-let marketViewCache = null;
-let marketViewCacheExpiresAtMs = 0;
-let marketViewInflight = null;
+const MARKET_VIEW_CACHE_TTL_MS = 8_000;
+const marketViewCache = new Map();
+const marketViewInflight = new Map();
 
 function toFixedPrice(asset, value) {
   const precision = PRECISION_BY_ASSET[asset] ?? 6;
@@ -123,36 +122,72 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
   );
 }
 
-async function buildMarkets() {
-  const nowMs = Date.now();
-  if (marketViewCache && marketViewCacheExpiresAtMs > nowMs) {
-    return marketViewCache;
+function getCandidateRecords(records, status, nowSec) {
+  if (status === "OPEN") {
+    return records.filter((record) => Number(record.closeAt) > nowSec);
   }
 
-  if (marketViewInflight) {
-    return marketViewInflight;
+  if (status === "LOCKED") {
+    return records.filter(
+      (record) => Number(record.closeAt) <= nowSec && Number(record.resolveAt) > nowSec,
+    );
   }
 
-  const snapshotMap = await getAssetSnapshotMap();
+  if (status === "RESOLVED") {
+    return records.filter((record) => Number(record.resolveAt) <= nowSec);
+  }
+
+  return records;
+}
+
+function getCachedMarketViews(cacheKey) {
+  const entry = marketViewCache.get(cacheKey);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAtMs <= Date.now()) {
+    marketViewCache.delete(cacheKey);
+    return null;
+  }
+
+  return entry.items;
+}
+
+async function buildMarkets(status = "") {
+  const cacheKey = status || "ALL";
+  const cached = getCachedMarketViews(cacheKey);
+  if (cached) {
+    return cached;
+  }
+
+  if (marketViewInflight.has(cacheKey)) {
+    return marketViewInflight.get(cacheKey);
+  }
+
   const nowSec = Math.floor(Date.now() / 1000);
-  const records = listMarketRecords();
-  marketViewInflight = Promise.all(
+  const snapshotMap = await getAssetSnapshotMap();
+  const records = getCandidateRecords(listMarketRecords(), status, nowSec);
+  const inflight = Promise.all(
     records.map((record) => buildMarketFromRecord(record, snapshotMap, nowSec)),
   )
     .then((items) => {
-      marketViewCache = items;
-      marketViewCacheExpiresAtMs = Date.now() + MARKET_VIEW_CACHE_TTL_MS;
+      marketViewCache.set(cacheKey, {
+        items,
+        expiresAtMs: Date.now() + MARKET_VIEW_CACHE_TTL_MS,
+      });
       return items;
     })
     .finally(() => {
-      marketViewInflight = null;
+      marketViewInflight.delete(cacheKey);
     });
 
-  return marketViewInflight;
+  marketViewInflight.set(cacheKey, inflight);
+  return inflight;
 }
 
 export async function listMarkets(status) {
-  const items = await buildMarkets();
+  const items = await buildMarkets(status);
   if (!status) {
     return items;
   }
@@ -218,7 +253,6 @@ export async function listPositions(userAddress) {
 }
 
 export function invalidateMarketViewCache() {
-  marketViewCache = null;
-  marketViewCacheExpiresAtMs = 0;
-  marketViewInflight = null;
+  marketViewCache.clear();
+  marketViewInflight.clear();
 }

@@ -139,7 +139,8 @@ h1, h2, h3, p, ul, ol, dl, dd {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 14px 0;
+  margin: 0 -16px;
+  padding: 14px 16px;
   background: rgba(8, 11, 22, 0.72);
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
