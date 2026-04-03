@@ -20,7 +20,7 @@ const TOKEN_META = {
   REDO: { color: "#10B981" },
 };
 
-const ASSET_ICON_VERSION = "20260403j";
+const ASSET_ICON_VERSION = "20260403k";
 const CREATE_ASSET_OPTIONS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
 
 const MARKET_FILTER_OPTIONS = [
@@ -110,6 +110,7 @@ const state = {
   },
   createContextLoaded: false,
   positionsLoaded: false,
+  positionsLoading: false,
   pendingCreateAddress: null,
   createSubmitting: false,
   pendingBet: null,
@@ -429,10 +430,12 @@ function syncWalletState(wallet) {
     state.pendingBet = null;
     state.pendingClaim = null;
     state.positionsLoaded = false;
+    state.positionsLoading = false;
     walletStatusEl.textContent = "Wallet not connected";
     walletAddressEl.textContent =
       "Connect a TON wallet to create markets, place bets, and claim payouts.";
     positionsFeedbackEl.textContent = "Connect a wallet to load positions.";
+    positionsFeedbackEl.classList.remove("is-loading");
     positionsListEl.innerHTML =
       '<div class="position-empty">Wallet disconnected. Position feed is idle.</div>';
     renderMarkets(state.markets);
@@ -515,6 +518,27 @@ function renderMarketSkeletons(count = 3) {
         <div class="skeleton-button"></div>
         <div class="skeleton-button"></div>
       </div>
+    </article>
+  `).join("");
+}
+
+function renderPositionSkeletons(count = 2) {
+  positionsListEl.innerHTML = Array.from({ length: count }, () => `
+    <article class="position-row position-row--skeleton" aria-hidden="true">
+      <div>
+        <div class="position-header">
+          <div class="skeleton-line skeleton-line--position-title"></div>
+          <div class="skeleton-link"></div>
+        </div>
+        <div class="position-facts">
+          <span class="skeleton-line skeleton-line--position-meta"></span>
+          <span class="skeleton-line skeleton-line--position-meta"></span>
+          <span class="skeleton-line skeleton-line--position-meta"></span>
+          <span class="skeleton-line skeleton-line--position-meta"></span>
+        </div>
+      </div>
+      <div class="skeleton-pill skeleton-pill--position"></div>
+      <div class="skeleton-button skeleton-button--position"></div>
     </article>
   `).join("");
 }
@@ -681,6 +705,11 @@ function renderPositions(items) {
     return;
   }
 
+  if (state.positionsLoading && !items.length) {
+    renderPositionSkeletons();
+    return;
+  }
+
   if (!items.length) {
     positionsListEl.innerHTML =
       '<div class="position-empty">No positions yet. Create a market or place a bet to start the demo flow.</div>';
@@ -746,21 +775,39 @@ function renderPositions(items) {
 async function loadPositions() {
   if (!state.wallet) {
     state.positionsLoaded = false;
+    state.positionsLoading = false;
     return;
   }
 
-  positionsFeedbackEl.textContent = "Loading positions...";
+  if (state.positionsLoading) {
+    return;
+  }
+
+  state.positionsLoading = true;
+  positionsFeedbackEl.textContent = state.positions.length
+    ? "Refreshing positions..."
+    : "Loading positions...";
+  positionsFeedbackEl.classList.add("is-loading");
+  if (!state.positions.length) {
+    renderPositionSkeletons();
+  }
 
   try {
     const userAddress = encodeURIComponent(state.wallet.account.address);
     const payload = await requestJson(`/api/positions?userAddress=${userAddress}`);
     state.positions = payload.items ?? [];
     state.positionsLoaded = true;
-    positionsFeedbackEl.textContent = `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`;
+    state.positionsLoading = false;
+    positionsFeedbackEl.classList.remove("is-loading");
+    positionsFeedbackEl.textContent = state.positions.length
+      ? `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`
+      : "No positions yet.";
     renderPositions(state.positions);
   } catch (error) {
     state.positions = [];
     state.positionsLoaded = false;
+    state.positionsLoading = false;
+    positionsFeedbackEl.classList.remove("is-loading");
     positionsFeedbackEl.textContent = `Failed to load positions: ${error.message}`;
     positionsListEl.innerHTML = "";
   }

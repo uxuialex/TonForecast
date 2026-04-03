@@ -603,6 +603,22 @@ main {
   margin-bottom: 12px;
 }
 
+.section-feedback.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.section-feedback.is-loading::before {
+  content: "";
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(79, 172, 254, 0.18);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
 .market-feedback {
   color: var(--dim);
   font-size: 13px;
@@ -1106,6 +1122,10 @@ select:focus {
   padding: 16px;
 }
 
+.position-row--skeleton {
+  pointer-events: none;
+}
+
 .position-row > div:first-child {
   width: 100%;
 }
@@ -1183,6 +1203,43 @@ select:focus {
   color: var(--dim);
   text-align: center;
   font-size: 14px;
+}
+
+.skeleton-link {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+}
+
+.skeleton-line--position-title {
+  width: min(100%, 280px);
+  height: 18px;
+}
+
+.skeleton-line--position-meta {
+  width: min(100%, 180px);
+  height: 12px;
+}
+
+.skeleton-pill--position {
+  width: 110px;
+  height: 30px;
+  border-radius: 999px;
+}
+
+.skeleton-button--position {
+  width: 112px;
+  height: 40px;
+  border-radius: 14px;
+  margin-left: auto;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* --- Bottom nav ----------------------------------------------- */
