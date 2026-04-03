@@ -35,7 +35,7 @@ import {
 import { getAssetSnapshotMap } from "./stonApi.js";
 import { scheduleAutoResolve } from "./resolverAutomation.js";
 
-const SUPPORTED_DURATIONS = [300, 900, 1800, 3600];
+const SUPPORTED_DURATIONS = [300, 900, 1800, 3600, 86400];
 const CREATE_RESOLVE_DELAY_SEC = 10;
 const TRANSACTION_VALIDITY_MS = 5 * 60 * 1000;
 
@@ -63,14 +63,21 @@ function ensureSupportedAsset(asset) {
 function ensureSupportedDuration(durationSec) {
   const numeric = Number(durationSec);
   if (!SUPPORTED_DURATIONS.includes(numeric)) {
-    throw badRequest("durationSec must be one of 300, 900, 1800 or 3600");
+    throw badRequest("durationSec must be one of 300, 900, 1800, 3600 or 86400");
   }
   return numeric;
 }
 
 function formatDurationLabel(durationSec) {
-  const minutes = Number(durationSec) / 60;
-  return `${minutes} min`;
+  const numeric = Number(durationSec ?? 0);
+  if (numeric === 86400) {
+    return "1 day";
+  }
+  if (numeric % 3600 === 0) {
+    const hours = numeric / 3600;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
+  }
+  return `${numeric / 60} min`;
 }
 
 function normalizeSide(side) {

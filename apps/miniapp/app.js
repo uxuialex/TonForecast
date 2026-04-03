@@ -330,8 +330,12 @@ function getMarketFilterLabel(value) {
 
 function formatDurationLabel(durationSec) {
   const numeric = Number(durationSec ?? 0);
+  if (numeric === 86400) {
+    return "1 day";
+  }
   if (numeric % 3600 === 0) {
-    return `${numeric / 3600} hour`;
+    const hours = numeric / 3600;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
   }
   return `${numeric / 60} min`;
 }

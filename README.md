@@ -30,7 +30,7 @@ The main files to read first are:
 
 - One active market per `asset + duration`
 - Current UI creates `above` markets only
-- Supported durations are `5 min`, `15 min`, `30 min`, `60 min`
+- Supported durations are `5 min`, `15 min`, `30 min`, `60 min`, `1 day`
 - Supported assets are `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
 - `TON` price uses CoinMarketCap with STON fallback
 - Ecosystem tokens use STON.fi

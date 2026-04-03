@@ -1,5 +1,5 @@
 export const SUPPORTED_ASSETS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
-export const MARKET_DURATIONS = [300, 900, 1800, 3600];
+export const MARKET_DURATIONS = [300, 900, 1800, 3600, 86400];
 export const MARKET_DIRECTIONS = ["above", "below"];
 export const PROTOCOL_FEE_BPS = 200;
 export const ASSET_USD_PRECISION = {
@@ -78,8 +78,13 @@ export function formatDurationLabel(durationSec) {
     return "0 min";
   }
 
+  if (numeric === 86400) {
+    return "1 day";
+  }
+
   if (numeric % 3600 === 0) {
-    return `${numeric / 3600} hour`;
+    const hours = numeric / 3600;
+    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
   }
 
   return `${numeric / 60} min`;
