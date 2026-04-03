@@ -185,6 +185,23 @@ h1, h2, h3, p, ul, ol, dl, dd {
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin: 10px 0 14px;
+  max-height: 240px;
+  opacity: 1;
+  transform: translateY(0);
+  overflow: hidden;
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    max-height 0.2s ease,
+    margin 0.2s ease;
+}
+
+.ticker-strip.is-hidden {
+  max-height: 0;
+  margin: 0;
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
 }
 
 .ticker-pill {
@@ -940,6 +957,8 @@ select:focus {
   .panel.is-entering,
   .panel.is-active.is-visible,
   .panel.is-leaving,
+  .ticker-strip,
+  .ticker-strip.is-hidden,
   .market-filter__menu,
   .market-filter__menu.is-visible,
   .market-filter__option,

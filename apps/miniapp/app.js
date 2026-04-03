@@ -104,6 +104,14 @@ if (runtimeModeEl) {
   runtimeModeEl.textContent = isTelegram ? "Inside Telegram" : "Browser Preview";
 }
 
+function syncPriceStripVisibility(activePanelName) {
+  if (!priceStripEl) {
+    return;
+  }
+
+  priceStripEl.classList.toggle("is-hidden", activePanelName !== "markets");
+}
+
 function switchPanel(nextPanelName) {
   const currentPanel = document.querySelector(".panel.is-active");
   const nextPanel = document.querySelector(`.panel[data-panel="${nextPanelName}"]`);
@@ -113,6 +121,7 @@ function switchPanel(nextPanelName) {
   }
 
   panelTransitionInFlight = true;
+  syncPriceStripVisibility(nextPanelName);
   tabs.forEach((item) => item.classList.toggle("is-active", item.dataset.tab === nextPanelName));
 
   nextPanel.classList.add("is-active", "is-entering");
@@ -142,6 +151,7 @@ tabs.forEach((tab) => {
 });
 
 document.querySelector(".panel.is-active")?.classList.add("is-visible");
+syncPriceStripVisibility(document.querySelector(".panel.is-active")?.dataset.panel ?? "markets");
 
 function shortAddress(value) {
   return `${value.slice(0, 6)}...${value.slice(-6)}`;
@@ -149,6 +159,22 @@ function shortAddress(value) {
 
 function setActionFeedback(message) {
   actionFeedbackEl.textContent = message;
+}
+
+async function promptWalletConnection(contextLabel = "this action") {
+  if (!state.tonConnectUI?.openModal) {
+    setActionFeedback(`Connect a wallet first to use ${contextLabel}.`);
+    return;
+  }
+
+  setActionFeedback(`Connect a wallet first to use ${contextLabel}.`);
+  try {
+    await state.tonConnectUI.openModal();
+  } catch (error) {
+    setActionFeedback(
+      `Wallet connection failed: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
 }
 
 function getMarketFilterLabel(value) {
@@ -497,7 +523,7 @@ async function sendTonTransaction(intent) {
 
 async function handleCreateIntent() {
   if (!state.wallet) {
-    setActionFeedback("Connect a wallet first. Create action stays locked until wallet connection is live.");
+    await promptWalletConnection("market creation");
     return;
   }
 
@@ -545,7 +571,7 @@ async function handleBetIntent(contractAddress, side) {
   }
 
   if (!state.wallet) {
-    setActionFeedback("Connect a wallet first. Bet buttons unlock only for a connected wallet.");
+    await promptWalletConnection("betting");
     return;
   }
 
@@ -587,7 +613,7 @@ async function handleClaimIntent(positionId) {
   }
 
   if (!state.wallet) {
-    setActionFeedback("Connect a wallet first. Claim is available only for the winner wallet.");
+    await promptWalletConnection("claim");
     return;
   }
 
