@@ -255,6 +255,9 @@ export function buildPositionView(position, marketView) {
   return {
     ...position,
     marketId: marketView.id,
+    createdAt: marketView.createdAt,
+    closeAt: marketView.closeAt,
+    resolveAt: marketView.resolveAt,
     token: marketView.token,
     iconUrl: marketView.iconUrl ?? null,
     question: marketView.question,

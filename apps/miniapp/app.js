@@ -692,13 +692,25 @@ function renderPositions(items) {
       (position) => `
         <article class="position-row" data-position-id="${position.id}" data-market-id="${position.marketId}">
           <div>
-            <p class="position-title">${position.question}</p>
+            <div class="position-header">
+              <p class="position-title">${position.question}</p>
+              <a
+                class="market-link position-link"
+                href="${getExplorerUrl(position.contractAddress)}"
+                target="_blank"
+                rel="noreferrer noopener"
+                aria-label="Open position market on explorer"
+                title="Open on explorer"
+              >↗</a>
+            </div>
             <div class="position-facts">
               <p class="position-meta">Your bet: ${position.betLabel}</p>
               <p class="position-meta">Result: ${position.resultLabel}</p>
               <p class="position-meta">Stake: ${position.amountLabel}</p>
               ${(position.claimable || position.claimed) ? `<p class="position-meta">Payout: ${position.payoutLabel}</p>` : ""}
               <p class="position-meta">State: ${position.marketStatusLabel}</p>
+              <p class="position-meta">Created: ${position.createdAt ? new Date(position.createdAt * 1000).toLocaleString() : "n/a"}</p>
+              <p class="position-meta">Closed: ${position.closeAt ? new Date(position.closeAt * 1000).toLocaleString() : "n/a"}</p>
             </div>
           </div>
           <span class="claim-pill ${getClaimClass(position.positionStatus)}">${position.positionStatusLabel}</span>
