@@ -2,162 +2,154 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
     <title>TonForecast</title>
-    <meta
-      name="description"
-      content="Telegram-native short-term prediction market on TON."
-    />
+    <meta name="description" content="Telegram-native short-term prediction market on TON." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
   </head>
   <body>
     <div class="app-shell">
-      <header class="hero">
-        <div>
-          <p class="eyebrow">Telegram Mini App • TON</p>
-          <h1>TonForecast</h1>
-          <p class="hero-copy">
-            Short-term onchain prediction markets for TON ecosystem tokens. Create
-            a market, place a bet, wait for automatic resolution, then claim.
-          </p>
+      <div class="ambient">
+        <div class="ambient__orb ambient__orb--1"></div>
+        <div class="ambient__orb ambient__orb--2"></div>
+        <div class="ambient__orb ambient__orb--3"></div>
+      </div>
+
+      <header class="top-bar">
+        <div class="brand">
+          <div class="brand__icon">TF</div>
+          <div>
+            <div class="brand__name">TonForecast</div>
+            <div class="brand__net">Testnet</div>
+          </div>
         </div>
-        <div class="hero-actions">
-          <button class="ghost-button">Testnet</button>
-          <div id="ton-connect" class="ton-connect-slot"></div>
-        </div>
+        <div id="ton-connect" class="ton-connect-slot"></div>
       </header>
 
-      <section class="wallet-panel">
-        <div>
-          <p class="section-kicker">Wallet</p>
-          <h2 id="wallet-status">Wallet not connected</h2>
-          <p id="wallet-address" class="wallet-copy">
-            Connect a TON wallet to create markets, place bets, and claim payouts.
-          </p>
-        </div>
-      </section>
+      <div id="action-feedback" class="feedback-bar">
+        Connect a wallet to unlock create, bet, and claim actions.
+      </div>
 
       <section id="price-strip" class="ticker-strip" aria-label="Live prices">
-        <div class="ticker-pill is-loading">Loading live prices...</div>
+        <div class="ticker-pill is-loading">Loading live prices…</div>
       </section>
-
-      <section class="demo-card">
-        <div>
-          <p class="section-kicker">Demo Path</p>
-          <h2>One clean flow</h2>
-          <p class="demo-copy">
-            Create a 5m STON market, take one side, let resolver settle it automatically,
-            then claim from the winning wallet.
-          </p>
-        </div>
-        <ol class="demo-steps">
-          <li>Create 5m market</li>
-          <li>Bet YES / NO</li>
-          <li>Wait for auto-resolve</li>
-          <li>Claim payout</li>
-        </ol>
-        <p id="action-feedback" class="action-feedback">
-          Connect a wallet to unlock create, bet, and claim actions.
-        </p>
-      </section>
-
-      <nav class="tabbar" aria-label="Sections">
-        <button class="tab is-active" data-tab="markets">Markets</button>
-        <button class="tab" data-tab="create">Create</button>
-        <button class="tab" data-tab="positions">My Positions</button>
-      </nav>
 
       <main>
         <section class="panel is-active" data-panel="markets">
           <div class="panel-header">
-            <div>
-              <p class="section-kicker">Open markets</p>
-              <h2>Live market list</h2>
-            </div>
-            <div class="filter-group">
-              <button class="filter is-active" data-status="">All</button>
-              <button class="filter" data-status="OPEN">Open</button>
-              <button class="filter" data-status="LOCKED">Resolving</button>
-              <button class="filter" data-status="RESOLVED">Resolved</button>
-            </div>
+            <h2>Markets</h2>
           </div>
-
-          <p id="markets-feedback" class="market-feedback">Loading markets...</p>
+          <div class="filter-group">
+            <button class="filter is-active" data-status="">All</button>
+            <button class="filter" data-status="OPEN">Open</button>
+            <button class="filter" data-status="LOCKED">Closed</button>
+            <button class="filter" data-status="RESOLVED">Resolved</button>
+          </div>
+          <p id="markets-feedback" class="section-feedback">Loading markets…</p>
           <div id="market-grid" class="market-grid"></div>
         </section>
 
         <section class="panel" data-panel="create">
           <div class="panel-header">
-            <div>
-              <p class="section-kicker">Create market</p>
-              <h2>Fast preset flow</h2>
-            </div>
+            <h2>Create Market</h2>
           </div>
+          <form class="create-card glass-card">
+            <label>
+              <span class="label-text">Asset</span>
+              <select id="asset">
+                <option value="TON">TON</option>
+                <option value="STON">STON</option>
+                <option value="tsTON">tsTON</option>
+                <option value="UTYA">UTYA</option>
+                <option value="MAJOR">MAJOR</option>
+                <option value="REDO">REDO</option>
+              </select>
+            </label>
 
-          <div class="create-layout">
-            <form class="create-card">
-              <label>
-                Asset
-                <select id="asset">
-                  <option value="TON">TON</option>
-                  <option value="STON">STON</option>
-                  <option value="tsTON">tsTON</option>
-                  <option value="UTYA">UTYA</option>
-                  <option value="MAJOR">MAJOR</option>
-                  <option value="REDO">REDO</option>
-                </select>
-              </label>
+            <label>
+              <span class="label-text">Duration</span>
+              <select id="duration">
+                <option value="300" selected>5 min</option>
+                <option value="900">15 min</option>
+                <option value="1800">30 min</option>
+                <option value="3600">60 min</option>
+              </select>
+            </label>
 
-              <label>
-                Duration
-                <select id="duration">
-                  <option value="300" selected>5 min</option>
-                  <option value="900">15 min</option>
-                  <option value="1800">30 min</option>
-                  <option value="3600">60 min</option>
-                </select>
-              </label>
+            <p id="create-current-price" class="field-hint">Current price: loading…</p>
 
-              <p id="create-current-price" class="field-hint">Current price: loading...</p>
-
-              <button id="create-market-button" type="button" class="primary-button wide-button">
-                Create Market
-              </button>
-            </form>
-
-            <aside class="preview-card">
-              <p class="section-kicker">Preview</p>
+            <div class="preview-box">
+              <span class="preview-label">Preview</span>
               <h3 id="preview-question">Will TON be above $3.42 in 60 seconds?</h3>
               <ul class="preview-list">
                 <li>Resolution source: resolver + STON.fi market data</li>
                 <li>Settlement model: proportional bet pool</li>
-                <li>MVP scope: objective short-term price events only</li>
               </ul>
-            </aside>
-          </div>
+            </div>
+
+            <button id="create-market-button" type="button" class="primary-button wide-button">
+              Create Market
+            </button>
+          </form>
         </section>
 
-        <section class="panel" data-panel="positions">
+        <section class="panel" data-panel="profile">
           <div class="panel-header">
-            <div>
-              <p class="section-kicker">Portfolio</p>
-              <h2>My positions</h2>
-            </div>
+            <h2>Profile</h2>
           </div>
 
-          <p id="positions-feedback" class="market-feedback">
-            Connect a wallet to load positions.
-          </p>
-          <div id="positions-list" class="positions-list"></div>
+          <div class="wallet-card glass-card">
+            <div class="wallet-avatar">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+              </svg>
+            </div>
+            <h3 id="wallet-status">Wallet not connected</h3>
+            <p id="wallet-address" class="wallet-addr">
+              Connect a TON wallet to create markets, place bets, and claim payouts.
+            </p>
+          </div>
+
+          <div class="positions-section">
+            <h3 class="positions-heading">My Positions</h3>
+            <p id="positions-feedback" class="section-feedback">Connect a wallet to load positions.</p>
+            <div id="positions-list" class="positions-list"></div>
+          </div>
         </section>
       </main>
+
+      <nav class="bottom-nav">
+        <button class="tab is-active" data-tab="markets">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          <span>Markets</span>
+        </button>
+        <button class="tab" data-tab="create">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/>
+            <line x1="12" y1="8" x2="12" y2="16"/>
+            <line x1="8" y1="12" x2="16" y2="12"/>
+          </svg>
+          <span>Create</span>
+        </button>
+        <button class="tab" data-tab="profile">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+            <circle cx="12" cy="7" r="4"/>
+          </svg>
+          <span>Profile</span>
+        </button>
+      </nav>
     </div>
 
     <script src="./app.js"></script>

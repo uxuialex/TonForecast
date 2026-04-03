@@ -1,3 +1,10 @@
+if (window.Telegram?.WebApp) {
+  const tg = window.Telegram.WebApp;
+  tg.expand();
+  tg.setHeaderColor("#080b16");
+  tg.setBackgroundColor("#080b16");
+}
+
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel");
 const assetEl = document.querySelector("#asset");
@@ -208,6 +215,7 @@ async function loadPrices() {
 
 function buildMarketStatusMeta(market) {
   const effectiveStatus = deriveEffectiveStatus(market);
+  const nowSec = Math.floor(Date.now() / 1000);
 
   if (effectiveStatus === "OPEN") {
     return {
@@ -217,9 +225,16 @@ function buildMarketStatusMeta(market) {
   }
 
   if (effectiveStatus === "LOCKED") {
+    if (market.resolveAt > nowSec) {
+      return {
+        statusText: "Auto-resolve in",
+        statusValue: formatCountdown(market.resolveAt),
+      };
+    }
+
     return {
-      statusText: "Resolving in",
-      statusValue: formatCountdown(market.resolveAt),
+      statusText: "Resolve due",
+      statusValue: new Date(market.resolveAt * 1000).toLocaleTimeString(),
     };
   }
 

@@ -79,7 +79,7 @@ export function deriveMarketStatus(input, nowSec = Math.floor(Date.now() / 1000)
 
 export function getMarketStatusLabel(status) {
   if (status === "OPEN") return "Open";
-  if (status === "LOCKED") return "Resolving";
+  if (status === "LOCKED") return "Closed";
   if (status === "RESOLVED_YES") return "Resolved: Yes";
   if (status === "RESOLVED_NO") return "Resolved: No";
   return status;
@@ -166,7 +166,7 @@ export function getPositionStatusLabel(status) {
   if (status === "CLAIMABLE") return "Claimable";
   if (status === "CLAIMED") return "Claimed";
   if (status === "LOST") return "Lost";
-  if (status === "LOCKED") return "Resolving";
+  if (status === "LOCKED") return "Closed";
   if (status === "OPEN") return "Open";
   return "No position";
 }
