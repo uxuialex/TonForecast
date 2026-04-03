@@ -60,6 +60,7 @@ function toStatusLabel(status) {
 async function buildMarketFromRecord(record, snapshotMap, nowSec) {
   const snapshot = snapshotMap.get(record.asset);
   const currentPrice = Number(snapshot?.priceUsd ?? record.currentPriceAtCreate ?? 0);
+  const iconUrl = snapshot?.iconUrl ?? `/api/assets/icons/${encodeURIComponent(record.asset)}`;
   let status = "OPEN";
   let threshold = Number(record.threshold ?? 0);
   let direction = record.direction ?? "above";
@@ -116,6 +117,7 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
       ownerAddress: record.ownerAddress,
       resolverAddress: record.resolverAddress,
       onchainReady,
+      iconUrl,
     },
     nowSec,
   );

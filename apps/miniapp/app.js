@@ -12,24 +12,44 @@ if (isTelegram) {
 }
 
 const TOKEN_META = {
-  TON:   { color: "#0098EA", icon: "https://assets.coingecko.com/coins/images/17980/small/ton_symbol.png" },
-  STON:  { color: "#0088CC", icon: "https://assets.coingecko.com/coins/images/28316/small/stonficoin.png" },
+  TON: { color: "#0098EA" },
+  STON: { color: "#0088CC" },
   tsTON: { color: "#7C3AED" },
-  UTYA:  { color: "#F59E0B" },
-  MAJOR: { color: "#2563EB", icon: "https://assets.coingecko.com/coins/images/39939/small/major.png" },
-  REDO:  { color: "#10B981" },
+  UTYA: { color: "#F59E0B" },
+  MAJOR: { color: "#2563EB" },
+  REDO: { color: "#10B981" },
 };
 
-function tokenIconHtml(symbol) {
+const MARKET_FILTER_OPTIONS = [
+  { value: "OPEN", label: "Active" },
+  { value: "", label: "All" },
+  { value: "LOCKED", label: "Closed" },
+  { value: "RESOLVED", label: "Resolved" },
+];
+
+function getTokenIconUrl(symbol) {
+  return `/api/assets/icons/${encodeURIComponent(symbol)}`;
+}
+
+function tokenIconHtml(symbol, iconUrl = getTokenIconUrl(symbol), variant = "default") {
   const meta = TOKEN_META[symbol] || {};
   const color = meta.color || "#6366f1";
-  const letter = `<span class="token-icon token-icon--letter" style="background:${color}">${symbol[0]}</span>`;
-  if (!meta.icon) return letter;
+  const iconClass = variant === "badge" ? "token-icon token-icon--badge" : "token-icon";
+  const fallbackClass =
+    variant === "badge"
+      ? "token-icon token-icon--letter token-icon--badge-letter"
+      : "token-icon token-icon--letter";
+  const letter = `<span class="${fallbackClass}" style="background:${color}">${symbol[0]}</span>`;
+  if (!iconUrl) return letter;
   return (
-    `<img class="token-icon" src="${meta.icon}" alt="${symbol}" ` +
+    `<img class="${iconClass}" src="${iconUrl}" alt="${symbol}" ` +
     `onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />` +
-    `<span class="token-icon token-icon--letter" style="display:none;background:${color}">${symbol[0]}</span>`
+    `<span class="${fallbackClass}" style="display:none;background:${color}">${symbol[0]}</span>`
   );
+}
+
+function assetBadgeHtml(symbol, iconUrl) {
+  return `<span class="asset-badge ${getAssetTone(symbol)}">${tokenIconHtml(symbol, iconUrl, "badge")}<span>${symbol}</span></span>`;
 }
 
 const tabs = document.querySelectorAll(".tab");
@@ -44,6 +64,12 @@ const marketFeedbackEl = document.querySelector("#markets-feedback");
 const positionsFeedbackEl = document.querySelector("#positions-feedback");
 const positionsListEl = document.querySelector("#positions-list");
 const marketFilterEl = document.querySelector("#market-filter");
+const marketFilterTriggerEl = document.querySelector("#market-filter-trigger");
+const marketFilterLabelEl = document.querySelector("#market-filter-label");
+const marketFilterMenuEl = document.querySelector("#market-filter-menu");
+const marketFilterOptionEls = Array.from(
+  document.querySelectorAll(".market-filter__option"),
+);
 const priceStripEl = document.querySelector("#price-strip");
 const createCurrentPriceEl = document.querySelector("#create-current-price");
 const createMarketButtonEl = document.querySelector("#create-market-button");
@@ -93,6 +119,13 @@ function shortAddress(value) {
 
 function setActionFeedback(message) {
   actionFeedbackEl.textContent = message;
+}
+
+function getMarketFilterLabel(value) {
+  return (
+    MARKET_FILTER_OPTIONS.find((option) => option.value === value)?.label ??
+    "Active"
+  );
 }
 
 function formatDurationLabel(durationSec) {
@@ -205,7 +238,7 @@ function renderPrices(items) {
     .map(
       (item) => `
         <div class="ticker-pill">
-          ${tokenIconHtml(item.asset)}
+          ${tokenIconHtml(item.asset, item.iconUrl)}
           <div class="ticker-info">
             <span class="ticker-sym">${item.asset}</span>
             <span class="ticker-price">$${item.priceUsd}</span>
@@ -293,7 +326,7 @@ function renderMarkets(items) {
       return `
         <article class="market-card" data-market-address="${market.contractAddress}">
           <div class="market-topline">
-            <span class="asset-badge ${getAssetTone(market.token)}">${market.token}</span>
+            ${assetBadgeHtml(market.token, market.iconUrl)}
             <span class="${getStatusClass(effectiveStatus)}">${market.statusLabel}</span>
           </div>
           <h3>${market.question}</h3>
@@ -555,10 +588,64 @@ async function handleClaimIntent(positionId) {
   }
 }
 
-marketFilterEl.addEventListener("change", () => {
-  state.activeMarketStatus = marketFilterEl.value;
-  loadMarkets(state.activeMarketStatus);
-});
+function closeMarketFilter() {
+  if (!marketFilterEl || !marketFilterTriggerEl || !marketFilterMenuEl) {
+    return;
+  }
+
+  marketFilterEl.classList.remove("is-open");
+  marketFilterTriggerEl.setAttribute("aria-expanded", "false");
+  marketFilterMenuEl.hidden = true;
+}
+
+function syncMarketFilterUi() {
+  if (!marketFilterLabelEl) {
+    return;
+  }
+
+  marketFilterLabelEl.textContent = getMarketFilterLabel(state.activeMarketStatus);
+  marketFilterOptionEls.forEach((option) => {
+    option.classList.toggle(
+      "is-selected",
+      option.dataset.filterValue === state.activeMarketStatus,
+    );
+  });
+}
+
+if (marketFilterTriggerEl && marketFilterMenuEl) {
+  syncMarketFilterUi();
+
+  marketFilterTriggerEl.addEventListener("click", () => {
+    const nextOpen = !marketFilterEl.classList.contains("is-open");
+    marketFilterEl.classList.toggle("is-open", nextOpen);
+    marketFilterTriggerEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    marketFilterMenuEl.hidden = !nextOpen;
+  });
+
+  marketFilterMenuEl.addEventListener("click", (event) => {
+    const option = event.target.closest(".market-filter__option");
+    if (!option) {
+      return;
+    }
+
+    state.activeMarketStatus = option.dataset.filterValue ?? "OPEN";
+    syncMarketFilterUi();
+    closeMarketFilter();
+    loadMarkets(state.activeMarketStatus);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!marketFilterEl.contains(event.target)) {
+      closeMarketFilter();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeMarketFilter();
+    }
+  });
+}
 
 [assetEl, durationEl].forEach((element) => {
   element.addEventListener("change", () => {

@@ -25,14 +25,7 @@
 
       <header class="top-bar">
         <div class="brand">
-          <div class="brand__icon">TF</div>
-          <div>
-            <div class="brand__name">TonForecast</div>
-            <div class="brand__chips">
-              <div class="brand__net">TON</div>
-              <div id="runtime-mode" class="brand__runtime">Browser Preview</div>
-            </div>
-          </div>
+          <img class="brand__logo" src="./assets/logo-ton-forecast.svg" alt="TonForecast" />
         </div>
         <div id="ton-connect" class="ton-connect-slot"></div>
       </header>
@@ -49,12 +42,32 @@
         <section class="panel is-active" data-panel="markets">
           <div class="panel-header">
             <h2>Markets</h2>
-            <select id="market-filter" class="market-filter">
-              <option value="OPEN" selected>Active</option>
-              <option value="">All</option>
-              <option value="LOCKED">Resolving</option>
-              <option value="RESOLVED">Resolved</option>
-            </select>
+            <div id="market-filter" class="market-filter">
+              <button
+                id="market-filter-trigger"
+                class="market-filter__trigger"
+                type="button"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+              >
+                <span id="market-filter-label">Active</span>
+                <span class="market-filter__caret" aria-hidden="true"></span>
+              </button>
+              <div id="market-filter-menu" class="market-filter__menu" role="listbox" hidden>
+                <button class="market-filter__option is-selected" type="button" data-filter-value="OPEN">
+                  Active
+                </button>
+                <button class="market-filter__option" type="button" data-filter-value="">
+                  All
+                </button>
+                <button class="market-filter__option" type="button" data-filter-value="LOCKED">
+                  Closed
+                </button>
+                <button class="market-filter__option" type="button" data-filter-value="RESOLVED">
+                  Resolved
+                </button>
+              </div>
+            </div>
           </div>
           <p id="markets-feedback" class="section-feedback">Loading markets…</p>
           <div id="market-grid" class="market-grid"></div>

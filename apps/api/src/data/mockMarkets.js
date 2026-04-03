@@ -4,36 +4,42 @@ export const assetSnapshots = [
     priceUsd: "1.260000",
     source: "ston.fi",
     capturedAt: "2026-04-03T10:40:00.000Z",
+    iconUrl: "/api/assets/icons/TON",
   },
   {
     asset: "STON",
     priceUsd: "0.337025",
     source: "ston.fi",
     capturedAt: "2026-04-03T10:40:00.000Z",
+    iconUrl: "/api/assets/icons/STON",
   },
   {
     asset: "tsTON",
     priceUsd: "1.369513",
     source: "ston.fi",
     capturedAt: "2026-04-03T10:40:00.000Z",
+    iconUrl: "/api/assets/icons/tsTON",
   },
   {
     asset: "UTYA",
     priceUsd: "0.005679",
     source: "ston.fi",
     capturedAt: "2026-04-03T10:40:00.000Z",
+    iconUrl: "/api/assets/icons/UTYA",
   },
   {
     asset: "MAJOR",
     priceUsd: "0.062896",
     source: "ston.fi",
     capturedAt: "2026-04-03T10:40:00.000Z",
+    iconUrl: "/api/assets/icons/MAJOR",
   },
   {
     asset: "REDO",
     priceUsd: "0.026677",
     source: "ston.fi",
     capturedAt: "2026-04-03T10:40:00.000Z",
+    iconUrl: "/api/assets/icons/REDO",
   },
 ];
 

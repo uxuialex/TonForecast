@@ -215,6 +215,7 @@ export function buildPositionView(position, marketView) {
     ...position,
     marketId: marketView.id,
     token: marketView.token,
+    iconUrl: marketView.iconUrl ?? null,
     question: marketView.question,
     marketStatus: marketView.effectiveStatus,
     marketStatusLabel: marketView.statusLabel,

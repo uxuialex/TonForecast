@@ -1,3 +1,4 @@
+import { readAssetIcon } from "./lib/assets.js";
 import { bootstrapAutoResolvers } from "./lib/resolverAutomation.js";
 import {
   confirmCreate,
@@ -51,6 +52,21 @@ export async function handleRequest(request) {
   try {
     if (url.pathname === "/healthz") {
       return json({ ok: true, service: "api" });
+    }
+
+    if (url.pathname.startsWith("/api/assets/icons/")) {
+      const asset = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+      const icon = await readAssetIcon(asset);
+      if (!icon) {
+        return json({ error: "Asset icon not found" }, { status: 404 });
+      }
+
+      return new Response(icon.body, {
+        headers: {
+          "content-type": icon.contentType,
+          "cache-control": "public, max-age=86400, immutable",
+        },
+      });
     }
 
     if (url.pathname === "/api/prices") {

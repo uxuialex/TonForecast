@@ -1,5 +1,6 @@
 import { SUPPORTED_ASSETS, formatUsd } from "../../../../packages/shared/src/index.js";
 import { assetSnapshots as fallbackSnapshots } from "../data/mockMarkets.js";
+import { getAssetIconUrl } from "./assets.js";
 
 const STON_API_BASE = "https://api.ston.fi";
 const SNAPSHOT_CACHE_TTL_MS = 5_000;
@@ -51,6 +52,7 @@ async function fetchLiveSnapshots() {
       source: "ston.fi",
       capturedAt,
       contractAddress: match.contract_address ?? null,
+      iconUrl: getAssetIconUrl(asset),
     };
   });
 }
@@ -74,6 +76,7 @@ export async function getAssetSnapshots() {
     } catch (error) {
       const fallback = fallbackSnapshots.map((item) => ({
         ...item,
+        iconUrl: item.iconUrl ?? getAssetIconUrl(item.asset),
         fallback: true,
         error: error instanceof Error ? error.message : String(error),
       }));
