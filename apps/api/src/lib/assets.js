@@ -1,31 +1,31 @@
 import { readFile } from "node:fs/promises";
 
-const ASSET_ICON_VERSION = "20260403i";
+const ASSET_ICON_VERSION = "20260403j";
 
 const ASSET_ICON_REGISTRY = {
   TON: {
-    fileName: "ton-20260403.png",
-    contentType: "image/png",
+    fileName: "ton-20260403.svg",
+    contentType: "image/svg+xml",
   },
   STON: {
-    fileName: "ston-20260403.png",
-    contentType: "image/png",
+    fileName: "ston-20260403.svg",
+    contentType: "image/svg+xml",
   },
   tsTON: {
     fileName: "tston.svg",
     contentType: "image/svg+xml",
   },
   UTYA: {
-    fileName: "utya-20260403.png",
-    contentType: "image/png",
+    fileName: "utya-20260403.svg",
+    contentType: "image/svg+xml",
   },
   MAJOR: {
     fileName: "major.svg",
     contentType: "image/svg+xml",
   },
   REDO: {
-    fileName: "redo-20260403.png",
-    contentType: "image/png",
+    fileName: "redo-20260403.svg",
+    contentType: "image/svg+xml",
   },
 };
 
