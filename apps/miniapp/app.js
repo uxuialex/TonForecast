@@ -333,6 +333,15 @@ function formatDurationLabel(durationSec) {
   if (numeric === 86400) {
     return "1 day";
   }
+  if (numeric === 259200) {
+    return "3 days";
+  }
+  if (numeric === 604800) {
+    return "1 week";
+  }
+  if (numeric === 2592000) {
+    return "1 month";
+  }
   if (numeric % 3600 === 0) {
     const hours = numeric / 3600;
     return `${hours} ${hours === 1 ? "hour" : "hours"}`;

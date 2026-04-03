@@ -128,7 +128,7 @@ Position state is derived per user:
 Use only objective, short-term price markets in MVP:
 
 - assets: `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
-- durations: `5 min`, `15 min`, `30 min`, `60 min`, `1 day`
+- durations: `5 min`, `15 min`, `30 min`, `60 min`, `1 day`, `3 days`, `1 week`, `1 month`
 - direction in current UI: `above`
 
 No free-form market creation. No subjective outcomes. No governance.
