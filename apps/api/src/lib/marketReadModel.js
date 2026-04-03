@@ -4,7 +4,7 @@ import {
   buildPositionView,
   formatUsd,
 } from "../../../../packages/shared/src/index.js";
-import { getMarketRecord, listMarketRecords } from "./marketRegistry.js";
+import { getMarketRecord, listMarketRecords, saveMarketRecord } from "./marketRegistry.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
 import {
   DIRECTION_ABOVE,
@@ -65,6 +65,56 @@ function toStatusLabel(status) {
   return "OPEN";
 }
 
+function buildPersistedSnapshot(record) {
+  if (!record.lastKnownStatus) {
+    return null;
+  }
+
+  return {
+    threshold: Number(record.lastKnownThreshold ?? record.threshold ?? 0),
+    direction: record.lastKnownDirection ?? record.direction ?? "above",
+    status: record.lastKnownStatus,
+    yesPool: Number(record.lastKnownYesPool ?? 0),
+    noPool: Number(record.lastKnownNoPool ?? 0),
+    finalPrice:
+      record.lastKnownFinalPrice == null
+        ? null
+        : Number(record.lastKnownFinalPrice),
+    outcome: record.lastKnownOutcome ?? null,
+  };
+}
+
+function persistSnapshotIfChanged(record, snapshot) {
+  const nextPatch = {
+    lastKnownThreshold: snapshot.threshold,
+    lastKnownDirection: snapshot.direction,
+    lastKnownStatus: snapshot.status,
+    lastKnownYesPool: snapshot.yesPool,
+    lastKnownNoPool: snapshot.noPool,
+    lastKnownFinalPrice: snapshot.finalPrice,
+    lastKnownOutcome: snapshot.outcome,
+    lastKnownSyncedAt: Math.floor(Date.now() / 1000),
+  };
+
+  const hasChanged =
+    record.lastKnownThreshold !== nextPatch.lastKnownThreshold ||
+    record.lastKnownDirection !== nextPatch.lastKnownDirection ||
+    record.lastKnownStatus !== nextPatch.lastKnownStatus ||
+    record.lastKnownYesPool !== nextPatch.lastKnownYesPool ||
+    record.lastKnownNoPool !== nextPatch.lastKnownNoPool ||
+    record.lastKnownFinalPrice !== nextPatch.lastKnownFinalPrice ||
+    record.lastKnownOutcome !== nextPatch.lastKnownOutcome;
+
+  if (!hasChanged) {
+    return;
+  }
+
+  saveMarketRecord({
+    contractAddress: record.contractAddress,
+    ...nextPatch,
+  });
+}
+
 async function buildMarketFromRecord(record, snapshotMap, nowSec) {
   const snapshot = snapshotMap.get(record.asset);
   const currentPrice = Number(snapshot?.priceUsd ?? record.currentPriceAtCreate ?? 0);
@@ -88,14 +138,36 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
     noPool = nanosToTonDecimal(state.noPool);
     finalPrice = state.finalPrice > 0n ? Number(state.finalPrice) / 1_000_000 : null;
     outcome = toOutcomeLabel(state.resolvedOutcome);
+
+    persistSnapshotIfChanged(record, {
+      threshold,
+      direction,
+      status,
+      yesPool,
+      noPool,
+      finalPrice,
+      outcome,
+    });
   } catch (error) {
-    const fallbackStatus =
-      Number(record.resolveAt) <= nowSec
-        ? "LOCKED"
-        : Number(record.closeAt) <= nowSec
+    const persistedSnapshot = buildPersistedSnapshot(record);
+    if (persistedSnapshot) {
+      threshold = persistedSnapshot.threshold;
+      direction = persistedSnapshot.direction;
+      status = persistedSnapshot.status;
+      yesPool = persistedSnapshot.yesPool;
+      noPool = persistedSnapshot.noPool;
+      finalPrice = persistedSnapshot.finalPrice;
+      outcome = persistedSnapshot.outcome;
+      onchainReady = true;
+    } else {
+      const fallbackStatus =
+        Number(record.resolveAt) <= nowSec
           ? "LOCKED"
-          : "OPEN";
-    status = fallbackStatus;
+          : Number(record.closeAt) <= nowSec
+            ? "LOCKED"
+            : "OPEN";
+      status = fallbackStatus;
+    }
   }
 
   return buildMarketView(
