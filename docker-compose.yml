@@ -1,0 +1,12 @@
+services:
+  # Placeholder Mini App frontend.
+  # This is only for Variant A: make CI deploy something public HTTPS via your existing reverse proxy.
+  # Exposes locally on the server only; point Nginx/Caddy to 127.0.0.1:3010.
+  miniapp:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3010:80"
+    volumes:
+      - ./infra/miniapp-placeholder:/usr/share/nginx/html:ro
+
