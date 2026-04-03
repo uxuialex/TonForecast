@@ -32,6 +32,7 @@ const PRECISION_BY_ASSET = {
   REDO: 6,
 };
 const MARKET_VIEW_CACHE_TTL_MS = 8_000;
+const POSITION_READ_CONCURRENCY = 2;
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
 
@@ -190,6 +191,27 @@ async function buildMarkets(status = "") {
   return inflight;
 }
 
+async function mapConcurrent(items, concurrency, mapper) {
+  const results = new Array(items.length);
+  let cursor = 0;
+
+  async function worker() {
+    while (cursor < items.length) {
+      const currentIndex = cursor;
+      cursor += 1;
+      results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+    }
+  }
+
+  const workers = Array.from(
+    { length: Math.max(1, Math.min(concurrency, items.length || 1)) },
+    () => worker(),
+  );
+
+  await Promise.all(workers);
+  return results;
+}
+
 export async function listMarkets(status) {
   const items = await buildMarkets(status);
   if (!status) {
@@ -215,8 +237,11 @@ export async function listPositions(userAddress) {
   const markets = await buildMarkets();
   const marketMap = new Map(markets.map((item) => [item.contractAddress, item]));
 
-  const entries = await Promise.all(
-    records.map(async (record) => {
+  const sortedRecords = [...records].sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+  const entries = await mapConcurrent(
+    sortedRecords,
+    POSITION_READ_CONCURRENCY,
+    async (record) => {
       const marketView = marketMap.get(record.contractAddress);
       if (!marketView) {
         return null;
@@ -250,7 +275,7 @@ export async function listPositions(userAddress) {
         );
         return null;
       }
-    }),
+    },
   );
 
   return entries.filter(Boolean);

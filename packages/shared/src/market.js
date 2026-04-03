@@ -296,7 +296,7 @@ export function buildPositionView(position, marketView) {
     amountLabel: `${formatTon(position.amountTon)} TON`,
     totalPoolTon,
     totalPoolLabel: `${formatTon(totalPoolTon)} TON`,
-    winningPoolTon,
+    winningPoolTon: winnerPoolTon,
     winningPoolLabel: `${formatTon(winnerPoolTon)} TON`,
     sharePercent,
     shareLabel: formatPercent(sharePercent),

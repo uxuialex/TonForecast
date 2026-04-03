@@ -36,6 +36,7 @@ export const MIN_BET_NANO = toNano("0.001");
 export const DEFAULT_CREATE_VALUE_NANO = toNano("0.05");
 export const DEFAULT_ACTION_VALUE_NANO = toNano("0.05");
 const DEFAULT_RPC_MAX_RETRIES = 4;
+const USER_STAKE_RPC_MAX_RETRIES = 2;
 const RPC_CALL_TIMEOUT_MS = 4_000;
 const MARKET_STATE_CACHE_TTL_MS = 8_000;
 const USER_STAKE_CACHE_TTL_MS = 8_000;
@@ -96,12 +97,14 @@ export function isRateLimitError(error) {
     candidate.message?.includes("429") === true;
 }
 
-async function withRpcRetry(label, task) {
-  for (let attempt = 0; attempt < DEFAULT_RPC_MAX_RETRIES; attempt += 1) {
+async function withRpcRetry(label, task, options = {}) {
+  const maxRetries = Number(options.maxRetries ?? DEFAULT_RPC_MAX_RETRIES);
+
+  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     try {
       return await task();
     } catch (error) {
-      if (!isRateLimitError(error) || attempt === DEFAULT_RPC_MAX_RETRIES - 1) {
+      if (!isRateLimitError(error) || attempt === maxRetries - 1) {
         throw error;
       }
 
@@ -395,14 +398,18 @@ class TonForecastMarketContract {
   }
 
   async getUserStake(provider, userAddress) {
-    const result = await withRpcRetry("get_user_stake", () =>
-      withTimeout(
-        provider.get("get_user_stake", [
-          { type: "slice", cell: beginCell().storeAddress(parseAddress(userAddress)).endCell() },
-        ]),
-        RPC_CALL_TIMEOUT_MS,
-        "get_user_stake",
-      ));
+    const result = await withRpcRetry(
+      "get_user_stake",
+      () =>
+        withTimeout(
+          provider.get("get_user_stake", [
+            { type: "slice", cell: beginCell().storeAddress(parseAddress(userAddress)).endCell() },
+          ]),
+          RPC_CALL_TIMEOUT_MS,
+          "get_user_stake",
+        ),
+      { maxRetries: USER_STAKE_RPC_MAX_RETRIES },
+    );
 
     return {
       yesAmount: result.stack.readBigNumber(),
