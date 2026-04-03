@@ -58,7 +58,7 @@ One clean demo path:
 
 ## Stack
 
-- Frontend: static Telegram Mini App in [`/Users/alex/Documents/New project/apps/miniapp`](/Users/alex/Documents/New%20project/apps/miniapp)
+- Frontend: static Telegram Mini App in [`apps/miniapp`](apps/miniapp)
 - Wallet: TON Connect
 - Backend API: Node.js in [`/Users/alex/Documents/New project/apps/api`](/Users/alex/Documents/New%20project/apps/api)
 - Contracts: Tolk in [`/Users/alex/Documents/New project/contracts`](/Users/alex/Documents/New%20project/contracts)
