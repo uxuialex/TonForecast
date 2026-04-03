@@ -268,10 +268,29 @@ main {
 
 .panel {
   display: none;
+  opacity: 0;
+  transform: translateY(12px);
 }
 
 .panel.is-active {
   display: block;
+}
+
+.panel.is-entering,
+.panel.is-active.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+  transition:
+    opacity 0.24s ease,
+    transform 0.24s ease;
+}
+
+.panel.is-leaving {
+  opacity: 0;
+  transform: translateY(-10px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
 }
 
 .panel-header {
@@ -352,6 +371,19 @@ main {
   backdrop-filter: blur(28px);
   -webkit-backdrop-filter: blur(28px);
   z-index: 30;
+  opacity: 0;
+  transform: translateY(-8px) scale(0.97);
+  transform-origin: top right;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    transform 0.18s ease;
+}
+
+.market-filter__menu.is-visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
 }
 
 .market-filter__option {
@@ -377,6 +409,17 @@ main {
   background: var(--accent-dim);
   border-color: rgba(79, 172, 254, 0.22);
   color: var(--accent);
+}
+
+.market-filter__option {
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease,
+    transform 0.12s ease;
+}
+
+.market-filter__option:active {
+  transform: scale(0.98);
 }
 
 /* --- Section feedback ----------------------------------------- */
@@ -889,5 +932,19 @@ select:focus {
 
   .panel-header h2 {
     font-size: 21px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .panel.is-entering,
+  .panel.is-active.is-visible,
+  .panel.is-leaving,
+  .market-filter__menu,
+  .market-filter__menu.is-visible,
+  .market-filter__option,
+  .market-filter__caret {
+    transition: none;
+    animation: none;
   }
 }

@@ -98,20 +98,50 @@ const state = {
   },
 };
 
+let panelTransitionInFlight = false;
+
 if (runtimeModeEl) {
   runtimeModeEl.textContent = isTelegram ? "Inside Telegram" : "Browser Preview";
 }
 
+function switchPanel(nextPanelName) {
+  const currentPanel = document.querySelector(".panel.is-active");
+  const nextPanel = document.querySelector(`.panel[data-panel="${nextPanelName}"]`);
+
+  if (!nextPanel || currentPanel === nextPanel || panelTransitionInFlight) {
+    return;
+  }
+
+  panelTransitionInFlight = true;
+  tabs.forEach((item) => item.classList.toggle("is-active", item.dataset.tab === nextPanelName));
+
+  nextPanel.classList.add("is-active", "is-entering");
+  requestAnimationFrame(() => {
+    nextPanel.classList.add("is-visible");
+  });
+
+  if (currentPanel) {
+    currentPanel.classList.add("is-leaving");
+    currentPanel.classList.remove("is-visible");
+  }
+
+  window.setTimeout(() => {
+    if (currentPanel) {
+      currentPanel.classList.remove("is-active", "is-leaving", "is-visible");
+    }
+    nextPanel.classList.remove("is-entering");
+    nextPanel.classList.add("is-visible");
+    panelTransitionInFlight = false;
+  }, 260);
+}
+
 tabs.forEach((tab) => {
   tab.addEventListener("click", () => {
-    const next = tab.dataset.tab;
-
-    tabs.forEach((item) => item.classList.toggle("is-active", item === tab));
-    panels.forEach((panel) => {
-      panel.classList.toggle("is-active", panel.dataset.panel === next);
-    });
+    switchPanel(tab.dataset.tab);
   });
 });
+
+document.querySelector(".panel.is-active")?.classList.add("is-visible");
 
 function shortAddress(value) {
   return `${value.slice(0, 6)}...${value.slice(-6)}`;
@@ -502,10 +532,7 @@ async function handleCreateIntent() {
       `Market submitted: ${intent.draft.question}. Auto-resolver is scheduled, you only need to claim later.`,
     );
     await Promise.all([loadMarkets(state.activeMarketStatus), loadCreateContext()]);
-    tabs.forEach((item) => item.classList.toggle("is-active", item.dataset.tab === "markets"));
-    panels.forEach((panel) => {
-      panel.classList.toggle("is-active", panel.dataset.panel === "markets");
-    });
+    switchPanel("markets");
   } catch (error) {
     setActionFeedback(`Create failed: ${error.message}`);
   }
@@ -594,8 +621,13 @@ function closeMarketFilter() {
   }
 
   marketFilterEl.classList.remove("is-open");
+  marketFilterMenuEl.classList.remove("is-visible");
   marketFilterTriggerEl.setAttribute("aria-expanded", "false");
-  marketFilterMenuEl.hidden = true;
+  window.setTimeout(() => {
+    if (!marketFilterEl.classList.contains("is-open")) {
+      marketFilterMenuEl.hidden = true;
+    }
+  }, 180);
 }
 
 function syncMarketFilterUi() {
@@ -619,7 +651,15 @@ if (marketFilterTriggerEl && marketFilterMenuEl) {
     const nextOpen = !marketFilterEl.classList.contains("is-open");
     marketFilterEl.classList.toggle("is-open", nextOpen);
     marketFilterTriggerEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
-    marketFilterMenuEl.hidden = !nextOpen;
+    if (nextOpen) {
+      marketFilterMenuEl.hidden = false;
+      requestAnimationFrame(() => {
+        marketFilterMenuEl.classList.add("is-visible");
+      });
+      return;
+    }
+
+    closeMarketFilter();
   });
 
   marketFilterMenuEl.addEventListener("click", (event) => {
