@@ -1,160 +1,152 @@
 # TonForecast
 
-Telegram Mini App on TON for short-term onchain prediction markets.
+TonForecast is a Telegram Mini App on TON for short-term, onchain prediction markets.
 
 Live demo:
+
 - Web: [https://ton.uxuialex.com](https://ton.uxuialex.com)
-- Telegram bot entry: [https://t.me/chatchatgpt_bot/TON_Forecast](https://t.me/chatchatgpt_bot/TON_Forecast)
+- Telegram entry: [https://t.me/chatchatgpt_bot/TON_Forecast](https://t.me/chatchatgpt_bot/TON_Forecast)
 
-## What It Does
+## What This Repository Contains
 
-TonForecast lets a user:
+The production app is split into four practical parts:
 
-- connect a wallet with TON Connect
-- create a market for a curated TON ecosystem asset
-- bet `YES` or `NO`
-- wait for automatic resolver settlement
-- claim payout onchain
+- [apps/miniapp](apps/miniapp): Telegram Mini App frontend, TON Connect bootstrap, market and profile UI
+- [apps/api](apps/api): backend read model, action intents, price snapshots, runtime registry, auto-resolver bootstrap
+- [contracts](contracts): Tolk market contract and contract spec
+- [scripts](scripts): manual create, bet, resolve, claim, and auto-resolve scripts
 
-Current curated assets:
+The main files to read first are:
 
-- `TON`
-- `STON`
-- `tsTON`
-- `UTYA`
-- `MAJOR`
-- `REDO`
-
-Supported market durations:
-
-- `5 min`
-- `15 min`
-- `30 min`
-- `60 min`
-
-## Demo Flow
-
-One clean demo path:
-
-1. Open the Mini App from Telegram.
-2. Connect Tonkeeper with TON Connect.
-3. Create a `5 min` market on `STON` or `TON`.
-4. Bet from one wallet on `YES`.
-5. Bet from another wallet on `NO`.
-6. Wait for auto-resolve.
-7. Claim from the winning side.
+- [apps/miniapp/app.js](apps/miniapp/app.js)
+- [apps/api/src/server.js](apps/api/src/server.js)
+- [apps/api/src/lib/marketActions.js](apps/api/src/lib/marketActions.js)
+- [apps/api/src/lib/marketReadModel.js](apps/api/src/lib/marketReadModel.js)
+- [apps/api/src/lib/stonApi.js](apps/api/src/lib/stonApi.js)
+- [contracts/ton_forecast_market.tolk](contracts/ton_forecast_market.tolk)
+- [packages/shared/src/market.js](packages/shared/src/market.js)
 
 ## Product Rules
 
-- One active market per `asset + duration`.
-- A new market can only be created after the previous one is closed.
-- The market threshold is fixed from the live asset price at signing time.
-- `TON` price uses `CMC` with `STON` fallback.
-- TON ecosystem assets use `STON.fi` price data.
-- Auto-resolver settles markets after `resolveAt`.
-- `Claim` is available only after `RESOLVED_*`.
-- If final price equals threshold exactly, the market resolves to `DRAW` and both sides can refund their own stake.
-- Protocol fee: `2%` of winnings.
+- One active market per `asset + duration`
+- Current UI creates `above` markets only
+- Supported durations are `5 min`, `15 min`, `30 min`, `60 min`
+- Supported assets are `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
+- `TON` price uses CoinMarketCap with STON fallback
+- Ecosystem tokens use STON.fi
+- Markets resolve automatically after `resolveAt`
+- Claim is available only after `RESOLVED_*`
+- Exact threshold hit resolves to `DRAW`
+- Protocol fee is `2%` of winnings
 
-## Stack
+## Price And Settlement Sources
 
-- Frontend: static Telegram Mini App in [`apps/miniapp`](apps/miniapp)
-- Wallet: TON Connect
-- Backend API: Node.js in [`apps/api`](apps/api)
-- Contracts: Tolk in [`contracts`](contracts)
-- Shared market/UI logic: [`packages/shared`](packages/shared)
-- Resolver scripts: [`scripts`](scripts)
-- Deploy: Docker Compose + Nginx + GitHub Actions
+- TON quote source: [apps/api/src/lib/stonApi.js](apps/api/src/lib/stonApi.js)
+- Script-side quote source: [scripts/lib/ston.ts](scripts/lib/ston.ts)
+- Market status and payout formatting: [packages/shared/src/market.js](packages/shared/src/market.js)
+- Contract payout logic: [contracts/ton_forecast_market.tolk](contracts/ton_forecast_market.tolk)
 
 ## Repository Layout
 
 ```text
 apps/
-  api/            Backend read model, actions, asset icons, runtime registry
+  api/            Backend API, runtime registry, icons, resolver bootstrap
   miniapp/        Telegram Mini App frontend
-contracts/        Tolk market contract
-packages/
-  shared/         Shared formatting and status logic
-scripts/          Deploy, create, bet, resolve, claim, auto-resolve scripts
-infra/            Nginx and infra support files
-docs/             Architecture and deployment notes
+  resolver/       Legacy notes and standalone resolver package docs
+contracts/        Tolk contract and contract-level spec
+docs/             Architecture, deployment, self-hosting notes
+infra/            Nginx config for the Mini App container
+packages/shared/  Shared market formatting and payout view logic
+scripts/          Manual and automatic market operation scripts
+wrappers/         Blueprint wrapper and compile entry
+tests/            Contract tests
 ```
 
-## Local Run
+## Quick Start
 
-Install deps and run the stack:
+### 1. Install Dependencies
 
 ```bash
 npm install
+```
+
+### 2. Create Local Env
+
+```bash
+cp .env.example .env.local
+```
+
+Fill the values described in [docs/self-hosting.md](docs/self-hosting.md).
+
+### 3. Start The Stack
+
+```bash
 docker compose up -d --build
 ```
 
-Useful endpoints:
+This starts:
 
-- `http://localhost:3001/healthz`
-- `http://localhost:3001/api/prices`
-- `http://localhost:3001/api/markets`
+- `miniapp` on `http://127.0.0.1:3010`
+- `api` behind `http://127.0.0.1:3010/api/*`
 
-## Environment
+Useful checks:
 
-Main runtime env lives in `.env.local`.
+```bash
+curl http://127.0.0.1:3010/api/prices
+curl "http://127.0.0.1:3010/api/markets?status=OPEN"
+curl "http://127.0.0.1:3010/api/positions?userAddress=0:..."
+```
 
-Important variables:
+## Make It Your Own
 
-- `RESOLVER_MNEMONIC`
-- `RESOLVER_WALLET_VERSION`
-- `TON_API_ENDPOINT`
-- `TON_API_KEY` or `TONCENTER_API_KEY`
-- `CMC_API_KEY`
+If you are forking this repo and launching your own version, start here:
 
-See [/.env.example](/Users/alex/Documents/New%20project/.env.example).
+1. Read [docs/self-hosting.md](docs/self-hosting.md).
+2. Update [apps/miniapp/tonconnect-manifest.json](apps/miniapp/tonconnect-manifest.json) to your domain.
+3. Update `TWA_RETURN_URL` in [apps/miniapp/app.js](apps/miniapp/app.js) to your Telegram bot Mini App link.
+4. Put your own runtime secrets into `.env.local` on the server.
+5. Configure GitHub Actions secrets for [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
+6. Point your Telegram bot Web App button to your public HTTPS URL.
 
-## Contract Flow
+Important: this repository does not include Telegram bot code. Any bot that opens your Mini App URL will work.
 
-Core contract actions:
+## Runtime Files You Will Touch Most Often
 
-- `create_market`
-- `bet_yes`
-- `bet_no`
-- `resolve_market`
-- `claim_reward`
+- Market create / bet / claim intents: [apps/api/src/lib/marketActions.js](apps/api/src/lib/marketActions.js)
+- Market list / positions read model: [apps/api/src/lib/marketReadModel.js](apps/api/src/lib/marketReadModel.js)
+- Auto-resolver bootstrap: [apps/api/src/lib/resolverAutomation.js](apps/api/src/lib/resolverAutomation.js)
+- TON RPC and resolver wallet env loading: [apps/api/src/lib/runtimeEnv.js](apps/api/src/lib/runtimeEnv.js)
+- Token icon registry: [apps/api/src/lib/assets.js](apps/api/src/lib/assets.js)
+- Frontend wallet bootstrap and panels: [apps/miniapp/app.js](apps/miniapp/app.js)
+- Frontend shell HTML: [apps/miniapp/index.html](apps/miniapp/index.html)
+- Reverse proxy config inside compose: [infra/nginx/miniapp.conf](infra/nginx/miniapp.conf)
+- Deploy workflow: [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml)
 
-Main manual scripts:
+## Manual Scripts
 
-- `npx blueprint run deployTonForecastMarket`
-- `npx blueprint run createTonForecastMarket`
-- `npx blueprint run betTonForecastMarket`
-- `npx blueprint run claimTonForecastMarket`
-- `MARKET_ADDRESS=EQ... npm run resolver:auto`
+Useful script entry points:
 
-## Current UI State
+- Auto-resolve one market: `MARKET_ADDRESS=EQ... npm run resolver:auto`
+- Deploy contract via Blueprint: `npx blueprint run deployTonForecastMarket`
+- Create a market manually: `npx blueprint run createTonForecastMarket`
+- Place a bet manually: `npx blueprint run betTonForecastMarket`
+- Claim manually: `npx blueprint run claimTonForecastMarket`
+- Inspect a market: `npx ts-node scripts/getTonForecastMarket.ts EQ...`
+- Inspect a position: `npx ts-node scripts/getTonForecastPosition.ts EQ... 0:...`
 
-Already wired through TON Connect:
+## Documentation
 
-- `Create`
-- `Bet`
-- `Claim`
+- Self-hosting and customization: [docs/self-hosting.md](docs/self-hosting.md)
+- VPS and CI deploy flow: [docs/deployment.md](docs/deployment.md)
+- Runtime architecture: [docs/architecture.md](docs/architecture.md)
+- Contract behavior: [contracts/spec.md](contracts/spec.md)
 
-Already shown in UI:
+## Notes Before Making The Repo Public
 
-- live prices
-- current pool sizes
-- close / resolve countdowns
-- readable market results
-- readable position states
-- explorer links for market contracts
+Current repo state is safe for public source:
 
-## Deployment
+- `.env`, `.env.local`, and runtime JSON are ignored
+- GitHub workflow reads deploy credentials only from GitHub Secrets
+- Token icons are local assets under [apps/api/public/asset-icons](apps/api/public/asset-icons)
 
-Production URL is served from:
-
-- `GitHub -> GitHub Actions -> VPS -> Docker Compose -> Nginx -> Telegram Mini App`
-
-Server target path:
-
-- `/opt/ton-forecast`
-
-Additional notes:
-
-- [Architecture](/Users/alex/Documents/New%20project/docs/architecture.md)
-- [Deployment](/Users/alex/Documents/New%20project/docs/deployment.md)
+Even so, rotate any keys that were ever pasted into chat or shell history.

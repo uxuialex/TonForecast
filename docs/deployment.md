@@ -1,124 +1,151 @@
 # Deployment
 
-## How The Delivery Path Actually Works
+This repository already contains the deploy path used in production.
 
-For Telegram Mini Apps, the frontend must be hosted on a public HTTPS URL.
+The relevant files are:
 
-Recommended path:
+- [docker-compose.yml](../docker-compose.yml)
+- [infra/nginx/miniapp.conf](../infra/nginx/miniapp.conf)
+- [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml)
+- [apps/miniapp/tonconnect-manifest.json](../apps/miniapp/tonconnect-manifest.json)
+- [apps/miniapp/app.js](../apps/miniapp/app.js)
 
-1. Code lives in GitHub.
-2. GitHub Actions builds and deploys to your VPS.
-3. VPS runs frontend, API, and resolver.
-4. Telegram bot opens the frontend URL as a Mini App.
+For a full fork-and-customize guide, read [docs/self-hosting.md](self-hosting.md).
 
-## Recommended Production Topology
+## How The Runtime Is Wired
+
+The deploy workflow assumes:
+
+1. the repository already exists on the VPS
+2. the server has Docker and Docker Compose
+3. `.env.local` already exists on the server
+4. a public reverse proxy forwards your domain to `127.0.0.1:3010`
+
+The current compose topology is:
 
 ```text
-GitHub
-  -> GitHub Actions
-  -> SSH to VPS
-  -> docker compose pull/build + up -d
-  -> Nginx/Caddy reverse proxy
-  -> https://app.your-domain.com
+Public domain
+  -> host reverse proxy
+  -> 127.0.0.1:3010
+  -> miniapp container (nginx)
+  -> /api/* proxied to api container
 ```
 
-## Runtime Split
+## What The Workflow Actually Does
 
-### Frontend
+The current [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) does this on each push to `main`:
 
-- static assets served by Nginx/Caddy
-- public URL used by Telegram Mini App button
+1. SSH to the VPS
+2. `git fetch origin main`
+3. `git reset --hard origin/main`
+4. remove stale `ton-forecast-api` containers
+5. rebuild and recreate `api`
+6. recreate `miniapp`
 
-### API
+That split is intentional. Recreating `miniapp` after `api` avoids stale nginx upstream state inside Docker.
 
-- private container exposed through reverse proxy
-- serves `/api/*`
+## GitHub Secrets
 
-### Resolver
-
-- internal worker container
-- not exposed publicly
-
-## Domain Plan
-
-Use separate subdomains from the start:
-
-- `app.your-domain.com` for the Mini App frontend
-- `api.your-domain.com` for backend API, or proxy it under `/api`
-
-For MVP, same-domain with reverse proxy is simpler:
-
-- `https://app.your-domain.com/`
-- `https://app.your-domain.com/api/*`
-
-## GitHub Secrets You Will Need
+Set these repository secrets:
 
 - `DEPLOY_HOST`
-- `DEPLOY_PORT`
 - `DEPLOY_USER`
 - `DEPLOY_SSH_KEY`
 - `DEPLOY_PATH`
 
-You will also need app secrets on the server:
-
-- TON endpoint keys if used
-- resolver wallet secret
-- STON.fi configuration if needed
-- bot and Mini App config
-
-## Recommended Server Layout
+Typical `DEPLOY_PATH`:
 
 ```text
-/opt/ton-native-pm/
-  docker-compose.yml
-  .env
-  infra/
+/opt/ton-forecast
 ```
 
-## Deployment Sequence
+## First-Time VPS Setup
 
-### Step 1
+### 1. Clone The Repository
 
-Provision a VPS with:
+```bash
+git clone https://github.com/your-org/your-fork.git /opt/ton-forecast
+cd /opt/ton-forecast
+```
 
-- Docker
-- Docker Compose
-- Nginx or Caddy
-- a domain with HTTPS
+### 2. Create Runtime Env
 
-### Step 2
+```bash
+cp .env.example .env.local
+```
 
-Create a CI pipeline that does:
+Then fill:
 
-1. Checks out repository
-2. Builds images or uploads source
-3. Connects to VPS over SSH
-4. Restarts services
+- `RESOLVER_MNEMONIC`
+- `RESOLVER_WALLET_VERSION`
+- `TON_API_ENDPOINT`
+- `TON_API_KEY` or `TONCENTER_API_KEY`
+- `CMC_API_KEY`
 
-### Step 3
+### 3. Start The Stack
 
-Point your Telegram bot Mini App button to the public frontend URL.
+```bash
+docker compose up -d --build
+```
 
-That is the moment the Mini App becomes visible inside Telegram.
+### 4. Put A Reverse Proxy In Front
 
-## What Not To Do First
+The compose stack binds the Mini App to:
 
-Do not spend the first days on:
+```text
+127.0.0.1:3010
+```
 
-- complicated Kubernetes setup
-- multi-server topology
-- fancy observability
-- custom deployment platform
+Your host-level reverse proxy should send your public app domain there.
 
-One VPS is enough for hackathon MVP.
+## Telegram-Specific Deploy Checklist
 
-## Suggested First Deploy Milestone
+Before you announce your public URL:
 
-Before writing serious contract logic, you want this already working:
+1. Update [apps/miniapp/tonconnect-manifest.json](../apps/miniapp/tonconnect-manifest.json) to your domain.
+2. Update `TWA_RETURN_URL` in [apps/miniapp/app.js](../apps/miniapp/app.js) to your own bot link.
+3. Make sure your Telegram bot points to the same public frontend URL.
 
-1. Push to GitHub.
-2. GitHub deploys to VPS.
-3. VPS serves a placeholder Mini App page at a public HTTPS URL.
-4. Telegram opens it.
+## Smoke Tests
 
-If this loop works, the rest becomes normal product work.
+After deploy, these checks should work on the VPS:
+
+```bash
+curl -I http://127.0.0.1:3010
+curl http://127.0.0.1:3010/api/prices
+curl "http://127.0.0.1:3010/api/markets?status=OPEN"
+```
+
+And from outside:
+
+```bash
+curl -I https://app.your-domain.com
+curl https://app.your-domain.com/api/prices
+```
+
+## Manual Recovery
+
+If GitHub Actions already updated the code on disk but containers are stale:
+
+```bash
+cd /opt/ton-forecast
+git fetch origin main
+git reset --hard origin/main
+docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
+docker compose up -d --build --force-recreate --no-deps api
+docker compose up -d --force-recreate --no-deps miniapp
+```
+
+## Common Failure Modes
+
+### `502 Bad Gateway`
+
+Usually means the `miniapp` container is still proxying to an old `api` container IP. Recreate `miniapp`.
+
+### `429` From TON RPC
+
+Usually means your endpoint needs an API key or a better rate-limit plan.
+
+### Old UI In Telegram
+
+Telegram caches webviews aggressively. Bump the asset/script version in [apps/miniapp/index.html](../apps/miniapp/index.html), then reopen the Mini App from the bot.

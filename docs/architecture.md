@@ -6,7 +6,7 @@ This MVP has four runtime parts:
 
 1. Mini App frontend
 2. Small backend API
-3. Resolver worker
+3. Resolver automation
 4. TON smart contract
 
 STON.fi is an external dependency for market data, token metadata, and threshold suggestions.
@@ -20,7 +20,8 @@ flowchart LR
     F --> A["Backend API: apps/api"]
     F --> W["TON Connect Wallet"]
     A --> S["STON.fi API"]
-    R["Resolver: apps/resolver"] --> S
+    A --> R["Resolver bootstrap: apps/api/src/lib/resolverAutomation.js"]
+    R --> S
     R --> C["TON Contract"]
     F --> C
 ```
@@ -54,7 +55,7 @@ Responsible for:
 
 For MVP this can stay very small. It is not the source of truth for bets or outcomes.
 
-### `apps/resolver`
+### Resolver automation
 
 Responsible for:
 
@@ -63,7 +64,12 @@ Responsible for:
 - deciding `YES` or `NO`
 - sending `resolve()` onchain
 
-This service will hold a privileged resolver wallet.
+Current production path is:
+
+- bootstrap in [apps/api/src/lib/resolverAutomation.js](../apps/api/src/lib/resolverAutomation.js)
+- resolver script in [scripts/autoResolveTonForecastMarket.ts](../scripts/autoResolveTonForecastMarket.ts)
+
+This runtime uses a privileged resolver wallet.
 
 ### `contracts`
 
@@ -122,8 +128,8 @@ Position state is derived per user:
 Use only objective, short-term price markets in MVP:
 
 - assets: `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
-- durations: `30s`, `60s`
-- directions: `above`, `below`
+- durations: `5 min`, `15 min`, `30 min`, `60 min`
+- direction in current UI: `above`
 
 No free-form market creation. No subjective outcomes. No governance.
 
