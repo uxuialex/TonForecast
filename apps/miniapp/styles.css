@@ -591,6 +591,12 @@ dd {
   border-color: rgba(248, 113, 113, 0.16);
 }
 
+.status-pill.is-resolved-draw {
+  color: var(--warn);
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(251, 191, 36, 0.22);
+}
+
 /* --- Buttons -------------------------------------------------- */
 
 .primary-button,

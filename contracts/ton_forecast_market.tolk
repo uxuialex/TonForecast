@@ -25,6 +25,7 @@ const STATUS_OPEN = 1 as uint8;
 const STATUS_LOCKED = 2 as uint8;
 const STATUS_RESOLVED_YES = 3 as uint8;
 const STATUS_RESOLVED_NO = 4 as uint8;
+const STATUS_RESOLVED_DRAW = 5 as uint8;
 
 const DIRECTION_ABOVE = 0 as uint8;
 const DIRECTION_BELOW = 1 as uint8;
@@ -32,6 +33,7 @@ const DIRECTION_BELOW = 1 as uint8;
 const OUTCOME_NONE = 0 as uint8;
 const OUTCOME_YES = 1 as uint8;
 const OUTCOME_NO = 2 as uint8;
+const OUTCOME_DRAW = 3 as uint8;
 
 const TOKEN_TON = stringToBase256("TON") as uint64;
 const TOKEN_STON = stringToBase256("STON") as uint64;
@@ -189,7 +191,9 @@ fun Storage.requireOpen(mutate self) {
 fun Storage.requireResolved(self) {
     val runtime = self.getMarketRuntime();
     assert (
-        runtime.status == STATUS_RESOLVED_YES || runtime.status == STATUS_RESOLVED_NO
+        runtime.status == STATUS_RESOLVED_YES ||
+        runtime.status == STATUS_RESOLVED_NO ||
+        runtime.status == STATUS_RESOLVED_DRAW
     ) throw ERR_NOT_RESOLVED;
 }
 
@@ -206,6 +210,10 @@ fun Storage.getUserStake(self, userAddress: address): UserStake {
 }
 
 fun calculateOutcome(direction: uint8, threshold: uint128, finalPrice: uint128): uint8 {
+    if (finalPrice == threshold) {
+        return OUTCOME_DRAW;
+    }
+
     if (direction == DIRECTION_ABOVE) {
         return finalPrice > threshold ? OUTCOME_YES : OUTCOME_NO;
     }
@@ -310,7 +318,9 @@ fun onInternalMessage(in: InMessage) {
             );
             runtime.status = runtime.resolvedOutcome == OUTCOME_YES
                 ? STATUS_RESOLVED_YES
-                : STATUS_RESOLVED_NO;
+                : runtime.resolvedOutcome == OUTCOME_NO
+                    ? STATUS_RESOLVED_NO
+                    : STATUS_RESOLVED_DRAW;
             storage.setMarketRuntime(runtime);
             storage.save();
         }
@@ -324,23 +334,35 @@ fun onInternalMessage(in: InMessage) {
             val currentStake = storage.getUserStake(in.senderAddress);
             assert (!currentStake.claimed) throw ERR_ALREADY_CLAIMED;
 
+            val totalStake = currentStake.yesAmount + currentStake.noAmount;
+            val isDraw = runtime.resolvedOutcome == OUTCOME_DRAW;
             val winningStake = runtime.resolvedOutcome == OUTCOME_YES
                 ? currentStake.yesAmount
-                : currentStake.noAmount;
+                : runtime.resolvedOutcome == OUTCOME_NO
+                    ? currentStake.noAmount
+                    : totalStake;
             val winningPool = runtime.resolvedOutcome == OUTCOME_YES
                 ? runtime.yesPool
-                : runtime.noPool;
+                : runtime.resolvedOutcome == OUTCOME_NO
+                    ? runtime.noPool
+                    : totalStake;
             val losingPool = runtime.resolvedOutcome == OUTCOME_YES
                 ? runtime.noPool
-                : runtime.yesPool;
+                : runtime.resolvedOutcome == OUTCOME_NO
+                    ? runtime.yesPool
+                    : 0 as coins;
 
             assert (winningStake > 0) throw ERR_NOT_WINNER;
-            assert (winningPool > 0) throw ERR_BAD_POOL;
+            assert (isDraw || winningPool > 0) throw ERR_BAD_POOL;
 
-            val grossPayout = (winningStake * (winningPool + losingPool)) / winningPool;
-            val grossWinnings = grossPayout > winningStake
-                ? grossPayout - winningStake
-                : 0;
+            val grossPayout = isDraw
+                ? totalStake
+                : ((winningStake * (winningPool + losingPool)) / winningPool) as coins;
+            val grossWinnings = isDraw
+                ? 0 as coins
+                : grossPayout > winningStake
+                    ? grossPayout - winningStake
+                    : 0 as coins;
             val protocolFee = (grossWinnings * PROTOCOL_FEE_BPS) / BPS_SCALE;
             val payout = grossPayout - protocolFee;
 

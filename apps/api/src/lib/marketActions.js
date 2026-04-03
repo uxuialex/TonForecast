@@ -22,10 +22,12 @@ import {
   isRateLimitError,
   MIN_BET_NANO,
   OUTCOME_NO,
+  OUTCOME_DRAW,
   OUTCOME_YES,
   parseAddress,
   STATUS_LOCKED,
   STATUS_OPEN,
+  STATUS_RESOLVED_DRAW,
   STATUS_RESOLVED_NO,
   STATUS_RESOLVED_YES,
   toPrice6,
@@ -289,7 +291,11 @@ export async function createClaimIntent({ contractAddress, userAddress }) {
   const state = await getCachedMarketState(record.contractAddress);
   const stake = await getCachedUserStake(record.contractAddress, userAddress);
 
-  if (state.status !== STATUS_RESOLVED_YES && state.status !== STATUS_RESOLVED_NO) {
+  if (
+    state.status !== STATUS_RESOLVED_YES &&
+    state.status !== STATUS_RESOLVED_NO &&
+    state.status !== STATUS_RESOLVED_DRAW
+  ) {
     throw badRequest("Claim blocked: market is not resolved yet.", 409);
   }
   if (stake.claimed) {
@@ -298,7 +304,11 @@ export async function createClaimIntent({ contractAddress, userAddress }) {
 
   const winningYes = state.resolvedOutcome === OUTCOME_YES;
   const winningNo = state.resolvedOutcome === OUTCOME_NO;
-  const isWinner = (winningYes && stake.yesAmount > 0n) || (winningNo && stake.noAmount > 0n);
+  const isDraw = state.resolvedOutcome === OUTCOME_DRAW;
+  const isWinner =
+    (winningYes && stake.yesAmount > 0n) ||
+    (winningNo && stake.noAmount > 0n) ||
+    (isDraw && (stake.yesAmount > 0n || stake.noAmount > 0n));
   if (!isWinner) {
     throw badRequest("Claim blocked: this wallet is not on the winning side.", 409);
   }
@@ -313,7 +323,11 @@ export async function createClaimIntent({ contractAddress, userAddress }) {
     market: {
       contractAddress: record.contractAddress,
       resolvedStatus:
-        state.status === STATUS_RESOLVED_YES ? "RESOLVED_YES" : "RESOLVED_NO",
+        state.status === STATUS_RESOLVED_YES
+          ? "RESOLVED_YES"
+          : state.status === STATUS_RESOLVED_NO
+            ? "RESOLVED_NO"
+            : "RESOLVED_DRAW",
     },
   };
 }

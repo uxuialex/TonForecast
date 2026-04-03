@@ -8,7 +8,9 @@ import {
     ERR_OPPOSITE_SIDE_BET,
     ERR_UNCONTESTED,
     MIN_BET,
+    OUTCOME_DRAW,
     OUTCOME_YES,
+    STATUS_RESOLVED_DRAW,
     STATUS_RESOLVED_YES,
     TonForecastMarket,
     derivePositionSummary,
@@ -165,5 +167,45 @@ describe('TonForecastMarket happy path', () => {
             success: false,
             exitCode: ERR_UNCONTESTED,
         });
+    });
+
+    it('refunds both sides when final price equals threshold', async () => {
+        await contract.sendBetYes(yesBettor.getSender(), toNano('3'));
+        await contract.sendBetNo(noBettor.getSender(), toNano('2'));
+
+        let state = await contract.getMarketState();
+        blockchain.now = Number(state.resolveTime + 1n);
+
+        const resolveResult = await contract.sendResolveMarket(
+            resolver.getSender(),
+            toNano('0.05'),
+            toPrice6('3.42'),
+        );
+
+        expect(resolveResult.transactions).toHaveTransaction({
+            from: resolver.address,
+            to: contract.address,
+            success: true,
+        });
+
+        state = await contract.getMarketState();
+        expect(state.status).toBe(STATUS_RESOLVED_DRAW);
+        expect(state.resolvedOutcome).toBe(OUTCOME_DRAW);
+
+        const yesPosition = derivePositionSummary(
+            state,
+            await contract.getUserStake(yesBettor.address),
+        );
+        const noPosition = derivePositionSummary(
+            state,
+            await contract.getUserStake(noBettor.address),
+        );
+
+        expect(yesPosition.positionStatus).toBe('CLAIMABLE');
+        expect(yesPosition.payout).toBe(toNano('3'));
+        expect(yesPosition.protocolFee).toBe(0n);
+        expect(noPosition.positionStatus).toBe('CLAIMABLE');
+        expect(noPosition.payout).toBe(toNano('2'));
+        expect(noPosition.protocolFee).toBe(0n);
     });
 });

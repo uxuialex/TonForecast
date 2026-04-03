@@ -241,6 +241,7 @@ function getStatusClass(status) {
   if (status === "LOCKED") return "status-pill is-locking";
   if (status === "RESOLVED_YES") return "status-pill is-resolved-yes";
   if (status === "RESOLVED_NO") return "status-pill is-resolved-no";
+  if (status === "RESOLVED_DRAW") return "status-pill is-resolved-draw";
   return "status-pill";
 }
 
@@ -255,6 +256,7 @@ function getClaimClass(status) {
 function getOutcomeLabel(outcome) {
   if (outcome === "YES") return "Yes";
   if (outcome === "NO") return "No";
+  if (outcome === "DRAW") return "Refund";
   return "Pending";
 }
 

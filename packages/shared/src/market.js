@@ -7,6 +7,7 @@ export const MARKET_STATUSES = [
   "LOCKED",
   "RESOLVED_YES",
   "RESOLVED_NO",
+  "RESOLVED_DRAW",
 ];
 export const POSITION_STATUSES = ["OPEN", "LOCKED", "CLAIMABLE", "CLAIMED", "LOST", "NO_POSITION"];
 export const POSITION_SIDES = ["YES", "NO"];
@@ -59,11 +60,16 @@ export function getDirectionLabel(direction) {
 export function getMarketOutcomeLabel(outcome) {
   if (outcome === "YES") return "Yes";
   if (outcome === "NO") return "No";
+  if (outcome === "DRAW") return "Refund";
   return "Pending";
 }
 
 export function deriveMarketStatus(input, nowSec = Math.floor(Date.now() / 1000)) {
-  if (input.status === "RESOLVED_YES" || input.status === "RESOLVED_NO") {
+  if (
+    input.status === "RESOLVED_YES" ||
+    input.status === "RESOLVED_NO" ||
+    input.status === "RESOLVED_DRAW"
+  ) {
     return input.status;
   }
 
@@ -83,6 +89,7 @@ export function getMarketStatusLabel(status) {
   if (status === "LOCKED") return "Closed";
   if (status === "RESOLVED_YES") return "Resolved: Yes";
   if (status === "RESOLVED_NO") return "Resolved: No";
+  if (status === "RESOLVED_DRAW") return "Resolved: Refund";
   return status;
 }
 
@@ -93,6 +100,10 @@ export function buildMarketQuestion(input) {
 export function determineOutcome(input) {
   const threshold = Number(input.threshold);
   const finalPrice = Number(input.finalPrice);
+
+  if (finalPrice === threshold) {
+    return "DRAW";
+  }
 
   if (input.direction === "above") {
     return finalPrice > threshold ? "YES" : "NO";
@@ -178,6 +189,10 @@ export function derivePositionStatus(position, marketView) {
     return "CLAIMABLE";
   }
 
+  if (marketView.outcome === "DRAW" && position.amountTon > 0) {
+    return "CLAIMABLE";
+  }
+
   return "LOST";
 }
 
@@ -191,11 +206,12 @@ export function getPositionStatusLabel(status) {
 }
 
 export function buildPositionView(position, marketView) {
+  const isDraw = marketView.outcome === "DRAW";
   const positionStatus = derivePositionStatus(position, marketView);
   const winnerPoolTon = marketView.outcome === "YES" ? marketView.yesPool : marketView.noPool;
   const loserPoolTon = marketView.outcome === "YES" ? marketView.noPool : marketView.yesPool;
   const feeTon =
-    positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED"
+    !isDraw && (positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED")
       ? calculateProtocolFee({
           winnerPoolTon,
           loserPoolTon,
@@ -203,7 +219,9 @@ export function buildPositionView(position, marketView) {
         })
       : "0";
   const payoutTon =
-    positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED"
+    isDraw && (positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED")
+      ? Number(position.amountTon).toFixed(6)
+      : positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED"
       ? calculatePayout({
           winnerPoolTon,
           loserPoolTon,

@@ -22,6 +22,7 @@ export const STATUS_OPEN = 1;
 export const STATUS_LOCKED = 2;
 export const STATUS_RESOLVED_YES = 3;
 export const STATUS_RESOLVED_NO = 4;
+export const STATUS_RESOLVED_DRAW = 5;
 
 export const DIRECTION_ABOVE = 0;
 export const DIRECTION_BELOW = 1;
@@ -29,6 +30,7 @@ export const DIRECTION_BELOW = 1;
 export const OUTCOME_NONE = 0;
 export const OUTCOME_YES = 1;
 export const OUTCOME_NO = 2;
+export const OUTCOME_DRAW = 3;
 
 export const MIN_BET_NANO = toNano("0.001");
 export const DEFAULT_CREATE_VALUE_NANO = toNano("0.05");
@@ -199,6 +201,8 @@ export function statusToLabel(status) {
       return "RESOLVED_YES";
     case STATUS_RESOLVED_NO:
       return "RESOLVED_NO";
+    case STATUS_RESOLVED_DRAW:
+      return "RESOLVED_DRAW";
     default:
       return `UNKNOWN_${status}`;
   }
@@ -212,6 +216,8 @@ export function outcomeToLabel(outcome) {
       return "YES";
     case OUTCOME_NO:
       return "NO";
+    case OUTCOME_DRAW:
+      return "DRAW";
     default:
       return `UNKNOWN_${outcome}`;
   }

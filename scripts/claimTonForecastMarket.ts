@@ -1,6 +1,7 @@
 import { Address } from '@ton/core';
 import { NetworkProvider } from '@ton/blueprint';
 import {
+    STATUS_RESOLVED_DRAW,
     STATUS_RESOLVED_NO,
     STATUS_RESOLVED_YES,
     TonForecastMarket,
@@ -22,7 +23,11 @@ export async function run(provider: NetworkProvider) {
     ui.write(`Status: ${statusToText(effectiveStatus)}`);
     ui.write(`Resolved outcome: ${outcomeToText(state.resolvedOutcome)}`);
 
-    if (effectiveStatus !== STATUS_RESOLVED_YES && effectiveStatus !== STATUS_RESOLVED_NO) {
+    if (
+        effectiveStatus !== STATUS_RESOLVED_YES &&
+        effectiveStatus !== STATUS_RESOLVED_NO &&
+        effectiveStatus !== STATUS_RESOLVED_DRAW
+    ) {
         ui.write('Claim aborted: market is not resolved yet.');
         return;
     }

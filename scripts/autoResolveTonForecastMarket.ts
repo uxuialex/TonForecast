@@ -7,6 +7,7 @@ import {
     DIRECTION_ABOVE,
     DIRECTION_BELOW,
     OP_RESOLVE_MARKET,
+    OUTCOME_DRAW,
     OUTCOME_NO,
     OUTCOME_YES,
     STATUS_LOCKED,
@@ -188,6 +189,10 @@ function deriveExpectedOutcome(
         (direction === DIRECTION_BELOW && finalPrice < threshold)
     ) {
         return OUTCOME_YES;
+    }
+
+    if (finalPrice === threshold) {
+        return OUTCOME_DRAW;
     }
 
     return OUTCOME_NO;

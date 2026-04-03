@@ -15,6 +15,7 @@ export const STATUS_OPEN = 1;
 export const STATUS_LOCKED = 2;
 export const STATUS_RESOLVED_YES = 3;
 export const STATUS_RESOLVED_NO = 4;
+export const STATUS_RESOLVED_DRAW = 5;
 
 export const DIRECTION_ABOVE = 0;
 export const DIRECTION_BELOW = 1;
@@ -22,6 +23,7 @@ export const DIRECTION_BELOW = 1;
 export const OUTCOME_NONE = 0;
 export const OUTCOME_YES = 1;
 export const OUTCOME_NO = 2;
+export const OUTCOME_DRAW = 3;
 export const ERR_BAD_TIMESTAMPS = 105;
 export const ERR_MARKET_CLOSED = 107;
 export const ERR_BET_TOO_SMALL = 114;
@@ -129,6 +131,8 @@ export function statusToText(status: number): string {
             return 'RESOLVED_YES';
         case STATUS_RESOLVED_NO:
             return 'RESOLVED_NO';
+        case STATUS_RESOLVED_DRAW:
+            return 'RESOLVED_DRAW';
         default:
             return `UNKNOWN_${status}`;
     }
@@ -158,6 +162,8 @@ export function outcomeToText(outcome: number): string {
             return 'YES';
         case OUTCOME_NO:
             return 'NO';
+        case OUTCOME_DRAW:
+            return 'DRAW';
         default:
             return `UNKNOWN_${outcome}`;
     }
@@ -193,22 +199,31 @@ export function derivePositionSummary(
     const totalStake = stake.yesAmount + stake.noAmount;
     const isResolved =
         effectiveMarketStatus === STATUS_RESOLVED_YES ||
-        effectiveMarketStatus === STATUS_RESOLVED_NO;
+        effectiveMarketStatus === STATUS_RESOLVED_NO ||
+        effectiveMarketStatus === STATUS_RESOLVED_DRAW;
     const winningStake = market.resolvedOutcome === OUTCOME_YES
         ? stake.yesAmount
         : market.resolvedOutcome === OUTCOME_NO
             ? stake.noAmount
-            : 0n;
+            : market.resolvedOutcome === OUTCOME_DRAW
+                ? totalStake
+                : 0n;
     const winningPool = market.resolvedOutcome === OUTCOME_YES
         ? market.yesPool
         : market.resolvedOutcome === OUTCOME_NO
             ? market.noPool
-            : 0n;
+            : market.resolvedOutcome === OUTCOME_DRAW
+                ? totalStake
+                : 0n;
     const totalPool = market.yesPool + market.noPool;
-    const grossPayout = winningStake > 0n && winningPool > 0n
+    const grossPayout = market.resolvedOutcome === OUTCOME_DRAW
+        ? totalStake
+        : winningStake > 0n && winningPool > 0n
         ? (winningStake * totalPool) / winningPool
         : 0n;
-    const grossWinnings = grossPayout > winningStake
+    const grossWinnings = market.resolvedOutcome === OUTCOME_DRAW
+        ? 0n
+        : grossPayout > winningStake
         ? grossPayout - winningStake
         : 0n;
     const protocolFee = (grossWinnings * PROTOCOL_FEE_BPS) / BPS_SCALE;

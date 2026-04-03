@@ -3,6 +3,7 @@ import { NetworkProvider } from '@ton/blueprint';
 import {
     DIRECTION_ABOVE,
     DIRECTION_BELOW,
+    OUTCOME_DRAW,
     OUTCOME_NO,
     OUTCOME_YES,
     STATUS_LOCKED,
@@ -23,7 +24,7 @@ export async function run(provider: NetworkProvider) {
     const now = BigInt(Math.floor(Date.now() / 1000));
 
     if (state.status !== STATUS_OPEN && state.status !== STATUS_LOCKED) {
-        ui.write(`Skip: market already finalized with status ${state.status}`);
+        ui.write(`Skip: market already finalized with status ${statusToText(state.status)}`);
         return;
     }
 
@@ -53,6 +54,8 @@ export async function run(provider: NetworkProvider) {
         (state.direction === DIRECTION_BELOW && finalPrice < state.threshold)
     ) {
         expectedOutcome = OUTCOME_YES;
+    } else if (finalPrice === state.threshold) {
+        expectedOutcome = OUTCOME_DRAW;
     }
 
     ui.write(`Current status: ${statusToText(state.status)}`);

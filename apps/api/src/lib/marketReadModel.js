@@ -13,9 +13,11 @@ import {
   getCachedUserStake,
   OUTCOME_NO,
   OUTCOME_NONE,
+  OUTCOME_DRAW,
   OUTCOME_YES,
   STATUS_LOCKED,
   STATUS_OPEN,
+  STATUS_RESOLVED_DRAW,
   STATUS_RESOLVED_NO,
   STATUS_RESOLVED_YES,
   nanosToTonDecimal,
@@ -45,6 +47,7 @@ function toDirectionLabel(direction) {
 function toOutcomeLabel(outcome) {
   if (outcome === OUTCOME_YES) return "YES";
   if (outcome === OUTCOME_NO) return "NO";
+  if (outcome === OUTCOME_DRAW) return "DRAW";
   return null;
 }
 
@@ -53,6 +56,7 @@ function toStatusLabel(status) {
   if (status === STATUS_LOCKED) return "LOCKED";
   if (status === STATUS_RESOLVED_YES) return "RESOLVED_YES";
   if (status === STATUS_RESOLVED_NO) return "RESOLVED_NO";
+  if (status === STATUS_RESOLVED_DRAW) return "RESOLVED_DRAW";
   return "OPEN";
 }
 
