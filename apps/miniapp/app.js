@@ -459,6 +459,7 @@ function renderMarkets(items) {
             <div><dt>Close</dt><dd>${new Date(market.closeAt * 1000).toLocaleTimeString()}</dd></div>
             <div><dt>Up pool</dt><dd>${market.yesPoolLabel}</dd></div>
             <div><dt>Down pool</dt><dd>${market.noPoolLabel}</dd></div>
+            <div><dt>Result</dt><dd>${market.outcomeLabel}</dd></div>
             <div><dt>Final price</dt><dd>${market.finalPriceLabel}</dd></div>
             <div><dt>Resolve</dt><dd>${new Date(market.resolveAt * 1000).toLocaleTimeString()}</dd></div>
           </dl>
@@ -504,7 +505,12 @@ function renderPositions(items) {
         <article class="position-row" data-position-id="${position.id}" data-market-id="${position.marketId}">
           <div>
             <p class="position-title">${position.question}</p>
-            <p class="position-meta">${position.sideLabel} • ${position.amountLabel} • ${position.marketStatusLabel}</p>
+            <div class="position-facts">
+              <p class="position-meta">Your bet: ${position.betLabel}</p>
+              <p class="position-meta">Result: ${position.resultLabel}</p>
+              <p class="position-meta">Stake: ${position.amountLabel}</p>
+              <p class="position-meta">State: ${position.marketStatusLabel}</p>
+            </div>
           </div>
           <span class="claim-pill ${getClaimClass(position.positionStatus)}">${position.positionStatusLabel}</span>
           <button

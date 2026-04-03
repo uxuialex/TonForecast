@@ -1,104 +1,160 @@
-# TON Native Prediction Market
+# TonForecast
 
-Telegram Mini App on TON for short-term prediction markets on token prices.
+Telegram Mini App on TON for short-term onchain prediction markets.
 
-## What We Are Building
+Live demo:
+- Web: [https://ton.uxuialex.com](https://ton.uxuialex.com)
+- Telegram bot entry: [https://t.me/chatchatgpt_bot/TON_Forecast](https://t.me/chatchatgpt_bot/TON_Forecast)
 
-MVP scope:
+## What It Does
 
-- Telegram Mini App as the main UI
-- TON Connect wallet flow
-- Onchain market contract
-- Resolver worker for automatic settlement
-- STON.fi market data for live prices and threshold presets
+TonForecast lets a user:
 
-Core demo flow:
+- connect a wallet with TON Connect
+- create a market for a curated TON ecosystem asset
+- bet `YES` or `NO`
+- wait for automatic resolver settlement
+- claim payout onchain
 
-1. User opens Mini App from Telegram.
-2. Connects wallet with TON Connect.
-3. Creates a 30s or 60s market for `TON`, `BTC`, or `ETH`.
-4. Bets `YES` or `NO`.
-5. Resolver settles the market automatically.
-6. Winner claims payout onchain.
+Current curated assets:
 
-## First Principle
+- `TON`
+- `STON`
+- `tsTON`
+- `UTYA`
+- `MAJOR`
+- `REDO`
 
-The Mini App is just a web app hosted on a public HTTPS URL.
+Supported market durations:
 
-The delivery chain is:
+- `5 min`
+- `15 min`
+- `30 min`
+- `60 min`
 
-`GitHub -> CI/CD -> VPS/server -> public HTTPS URL -> Telegram Mini App`
+## Demo Flow
 
-Telegram does not host the app for you. Telegram opens your hosted frontend inside the Telegram client.
+One clean demo path:
 
-## Recommended Repository Layout
+1. Open the Mini App from Telegram.
+2. Connect Tonkeeper with TON Connect.
+3. Create a `5 min` market on `STON` or `TON`.
+4. Bet from one wallet on `YES`.
+5. Bet from another wallet on `NO`.
+6. Wait for auto-resolve.
+7. Claim from the winning side.
+
+## Product Rules
+
+- One active market per `asset + duration`.
+- A new market can only be created after the previous one is closed.
+- The market threshold is fixed from the live asset price at signing time.
+- `TON` price uses `CMC` with `STON` fallback.
+- TON ecosystem assets use `STON.fi` price data.
+- Auto-resolver settles markets after `resolveAt`.
+- `Claim` is available only after `RESOLVED_*`.
+- If final price equals threshold exactly, the market resolves to `DRAW` and both sides can refund their own stake.
+- Protocol fee: `2%` of winnings.
+
+## Stack
+
+- Frontend: static Telegram Mini App in [`/Users/alex/Documents/New project/apps/miniapp`](/Users/alex/Documents/New%20project/apps/miniapp)
+- Wallet: TON Connect
+- Backend API: Node.js in [`/Users/alex/Documents/New project/apps/api`](/Users/alex/Documents/New%20project/apps/api)
+- Contracts: Tolk in [`/Users/alex/Documents/New project/contracts`](/Users/alex/Documents/New%20project/contracts)
+- Shared market/UI logic: [`/Users/alex/Documents/New project/packages/shared`](/Users/alex/Documents/New%20project/packages/shared)
+- Resolver scripts: [`/Users/alex/Documents/New project/scripts`](/Users/alex/Documents/New%20project/scripts)
+- Deploy: Docker Compose + Nginx + GitHub Actions
+
+## Repository Layout
 
 ```text
 apps/
-  miniapp/       Telegram Mini App frontend
-  api/           Small backend for cached market data and read endpoints
-  resolver/      Worker that settles expired markets
-contracts/       TON smart contracts
+  api/            Backend read model, actions, asset icons, runtime registry
+  miniapp/        Telegram Mini App frontend
+contracts/        Tolk market contract
 packages/
-  shared/        Shared types and constants
-infra/           Deployment and server setup docs
-docs/            Architecture and delivery docs
+  shared/         Shared formatting and status logic
+scripts/          Deploy, create, bet, resolve, claim, auto-resolve scripts
+infra/            Nginx and infra support files
+docs/             Architecture and deployment notes
 ```
 
-## Recommended Tech Choices
+## Local Run
 
-These are the default assumptions for the MVP:
+Install deps and run the stack:
 
-- Frontend: React + TypeScript + Vite
-- Mini App integration: Telegram WebApp SDK
-- Wallet: TON Connect UI
-- Smart contracts: Tact
-- Backend API: Node.js + Fastify
-- Resolver: Node.js worker with scheduled polling
-- Deploy: Docker Compose on a VPS behind Nginx/Caddy
-- CI/CD: GitHub Actions over SSH
+```bash
+npm install
+docker compose up -d --build
+```
 
-This stack is optimized for speed of delivery, not maximal purity.
+Useful endpoints:
 
-## Build Order
+- `http://localhost:3001/healthz`
+- `http://localhost:3001/api/prices`
+- `http://localhost:3001/api/markets`
 
-Do not start from the contract in isolation. Start from the full product path.
+## Environment
 
-### Phase 1
+Main runtime env lives in `.env.local`.
 
-- Create repository structure
-- Define market model and statuses
-- Set up VPS deployment path
-- Publish a placeholder Mini App URL
+Important variables:
 
-### Phase 2
+- `RESOLVER_MNEMONIC`
+- `RESOLVER_WALLET_VERSION`
+- `TON_API_ENDPOINT`
+- `TON_API_KEY` or `TONCENTER_API_KEY`
+- `CMC_API_KEY`
 
-- Build Mini App screens with mocked data
-- Build STON.fi data adapter
-- Build backend read endpoints
+See [/.env.example](/Users/alex/Documents/New%20project/.env.example).
 
-### Phase 3
+## Contract Flow
 
-- Implement contract for `create`, `bet`, `resolve`, `claim`
-- Connect frontend to contract reads/writes
-- Implement resolver
+Core contract actions:
 
-### Phase 4
+- `create_market`
+- `bet_yes`
+- `bet_no`
+- `resolve_market`
+- `claim_reward`
 
-- Wire end-to-end testnet flow
-- Polish Telegram UX
-- Prepare demo path
+Main manual scripts:
 
-## What To Do Next
+- `npx blueprint run deployTonForecastMarket`
+- `npx blueprint run createTonForecastMarket`
+- `npx blueprint run betTonForecastMarket`
+- `npx blueprint run claimTonForecastMarket`
+- `MARKET_ADDRESS=EQ... npm run resolver:auto`
 
-Immediate next steps:
+## Current UI State
 
-1. Scaffold the monorepo directories in this repo.
-2. Decide one deploy model: Docker on a VPS.
-3. Stand up a public domain/subdomain for the Mini App.
-4. Implement the frontend first with mocked markets.
-5. In parallel, define the contract data model.
+Already wired through TON Connect:
 
-Detailed architecture: [docs/architecture.md](docs/architecture.md)
+- `Create`
+- `Bet`
+- `Claim`
 
-Deployment path: [docs/deployment.md](docs/deployment.md)
+Already shown in UI:
+
+- live prices
+- current pool sizes
+- close / resolve countdowns
+- readable market results
+- readable position states
+- explorer links for market contracts
+
+## Deployment
+
+Production URL is served from:
+
+- `GitHub -> GitHub Actions -> VPS -> Docker Compose -> Nginx -> Telegram Mini App`
+
+Server target path:
+
+- `/opt/ton-forecast`
+
+Additional notes:
+
+- [Architecture](/Users/alex/Documents/New%20project/docs/architecture.md)
+- [Deployment](/Users/alex/Documents/New%20project/docs/deployment.md)

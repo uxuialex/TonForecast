@@ -260,6 +260,8 @@ export function buildPositionView(position, marketView) {
     marketStatusLabel: marketView.statusLabel,
     marketOutcome: marketView.outcome,
     marketOutcomeLabel: marketView.outcomeLabel,
+    betLabel: position.side === "YES" ? "Yes" : "No",
+    resultLabel: marketView.outcomeLabel,
     sideLabel:
       position.side === "YES"
         ? marketView.direction === "above"

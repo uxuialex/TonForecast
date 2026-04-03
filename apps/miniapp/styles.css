@@ -958,12 +958,17 @@ select:focus {
 }
 
 .position-meta {
-  margin-top: 4px;
   font-family: "IBM Plex Mono", monospace;
   font-size: 11px;
   color: var(--dim);
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.position-facts {
+  margin-top: 6px;
+  display: grid;
+  gap: 4px;
 }
 
 .claim-pill.is-claimable {
