@@ -15,6 +15,7 @@ import {
   DEFAULT_ACTION_VALUE_NANO,
   DIRECTION_ABOVE,
   formatPrice6,
+  isRateLimitError,
   MIN_BET_NANO,
   openMarketContract,
   OUTCOME_NO,
@@ -232,18 +233,31 @@ export async function createBetIntent({
   const normalizedSide = normalizeSide(side);
   const amountNano = normalizeAmountTon(amountTon);
   const market = openMarketContract(record.contractAddress);
-  const state = await market.getMarketState();
-  const stake = await market.getUserStake(parseAddress(userAddress));
-  const nowSec = BigInt(Math.floor(Date.now() / 1000));
+  let preflightStatus = "checked";
 
-  if (state.status !== STATUS_OPEN || nowSec >= state.closeTime) {
-    throw badRequest("Bet blocked: market is not OPEN.", 409);
-  }
-  if (normalizedSide === "YES" && stake.noAmount > 0n) {
-    throw badRequest("Bet blocked: this wallet already bet NO on this market.", 409);
-  }
-  if (normalizedSide === "NO" && stake.yesAmount > 0n) {
-    throw badRequest("Bet blocked: this wallet already bet YES on this market.", 409);
+  try {
+    const state = await market.getMarketState();
+    const stake = await market.getUserStake(parseAddress(userAddress));
+    const nowSec = BigInt(Math.floor(Date.now() / 1000));
+
+    if (state.status !== STATUS_OPEN || nowSec >= state.closeTime) {
+      throw badRequest("Bet blocked: market is not OPEN.", 409);
+    }
+    if (normalizedSide === "YES" && stake.noAmount > 0n) {
+      throw badRequest("Bet blocked: this wallet already bet NO on this market.", 409);
+    }
+    if (normalizedSide === "NO" && stake.yesAmount > 0n) {
+      throw badRequest("Bet blocked: this wallet already bet YES on this market.", 409);
+    }
+  } catch (error) {
+    if (!isRateLimitError(error)) {
+      throw error;
+    }
+
+    preflightStatus = "degraded";
+    console.warn(
+      `[api] bet preflight degraded for ${record.contractAddress}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
 
   return {
@@ -258,6 +272,7 @@ export async function createBetIntent({
       side: normalizedSide,
       question: buildQuestion(record.asset, toPrice6(record.threshold), record.durationSec),
     },
+    preflightStatus,
   };
 }
 

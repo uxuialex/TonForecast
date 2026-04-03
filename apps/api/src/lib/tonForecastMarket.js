@@ -33,6 +33,7 @@ export const OUTCOME_NO = 2;
 export const MIN_BET_NANO = toNano("0.001");
 export const DEFAULT_CREATE_VALUE_NANO = toNano("0.05");
 export const DEFAULT_ACTION_VALUE_NANO = toNano("0.05");
+const DEFAULT_RPC_MAX_RETRIES = 4;
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const buildArtifactPath = path.resolve(
@@ -52,6 +53,39 @@ export function parseAddress(input) {
 
 export function addressToString(input) {
   return parseAddress(input).toString();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export function isRateLimitError(error) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const candidate = error;
+  return candidate.response?.status === 429 ||
+    candidate.status === 429 ||
+    candidate.message?.includes("429") === true;
+}
+
+async function withRpcRetry(label, task) {
+  for (let attempt = 0; attempt < DEFAULT_RPC_MAX_RETRIES; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      if (!isRateLimitError(error) || attempt === DEFAULT_RPC_MAX_RETRIES - 1) {
+        throw error;
+      }
+
+      const delayMs = Math.min(10_000, 1_000 * (attempt + 1));
+      console.warn(`[api] ${label} hit RPC rate limit, retry in ${delayMs}ms`);
+      await sleep(delayMs);
+    }
+  }
+
+  throw new Error(`[api] ${label} exceeded retry budget`);
 }
 
 export function encodeAssetId(assetId) {
@@ -254,7 +288,7 @@ class TonForecastMarketContract {
   }
 
   async getMarketState(provider) {
-    const result = await provider.get("get_market_state", []);
+    const result = await withRpcRetry("get_market_state", () => provider.get("get_market_state", []));
     const marketId = result.stack.readBigNumber();
     const assetId = result.stack.readBigNumber();
     const threshold = result.stack.readBigNumber();
@@ -284,9 +318,10 @@ class TonForecastMarketContract {
   }
 
   async getUserStake(provider, userAddress) {
-    const result = await provider.get("get_user_stake", [
-      { type: "slice", cell: beginCell().storeAddress(parseAddress(userAddress)).endCell() },
-    ]);
+    const result = await withRpcRetry("get_user_stake", () =>
+      provider.get("get_user_stake", [
+        { type: "slice", cell: beginCell().storeAddress(parseAddress(userAddress)).endCell() },
+      ]));
 
     return {
       yesAmount: result.stack.readBigNumber(),
@@ -300,4 +335,3 @@ export function openMarketContract(address) {
   const client = getTonClient();
   return client.open(new TonForecastMarketContract(address));
 }
-
