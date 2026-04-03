@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260404a" />
+    <link rel="stylesheet" href="./styles.css?v=20260404c" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.0.11/dist/tonconnect-ui.min.js"></script>
   </head>
@@ -81,40 +81,53 @@
             <label>
               <span class="label-text">Asset</span>
               <input id="asset" type="hidden" value="TON" />
-              <div id="asset-picker" class="asset-picker">
+              <div id="asset-picker" class="form-picker asset-picker">
                 <button
                   id="asset-picker-trigger"
-                  class="asset-picker__trigger"
+                  class="form-picker__trigger asset-picker__trigger"
                   type="button"
                   aria-haspopup="listbox"
                   aria-expanded="false"
                 >
-                  <span id="asset-picker-value"></span>
+                  <span id="asset-picker-value" class="form-picker__value"></span>
                   <span class="market-filter__caret" aria-hidden="true"></span>
                 </button>
-                <div id="asset-picker-menu" class="asset-picker__menu" role="listbox" hidden>
-                  <button class="asset-picker__option is-selected" type="button" data-asset-value="TON"></button>
-                  <button class="asset-picker__option" type="button" data-asset-value="STON"></button>
-                  <button class="asset-picker__option" type="button" data-asset-value="tsTON"></button>
-                  <button class="asset-picker__option" type="button" data-asset-value="UTYA"></button>
-                  <button class="asset-picker__option" type="button" data-asset-value="MAJOR"></button>
-                  <button class="asset-picker__option" type="button" data-asset-value="REDO"></button>
+                <div id="asset-picker-menu" class="form-picker__menu asset-picker__menu" role="listbox" hidden>
+                  <button class="form-picker__option asset-picker__option is-selected" type="button" data-asset-value="TON"></button>
+                  <button class="form-picker__option asset-picker__option" type="button" data-asset-value="STON"></button>
+                  <button class="form-picker__option asset-picker__option" type="button" data-asset-value="tsTON"></button>
+                  <button class="form-picker__option asset-picker__option" type="button" data-asset-value="UTYA"></button>
+                  <button class="form-picker__option asset-picker__option" type="button" data-asset-value="MAJOR"></button>
+                  <button class="form-picker__option asset-picker__option" type="button" data-asset-value="REDO"></button>
                 </div>
               </div>
             </label>
 
             <label>
               <span class="label-text">Duration</span>
-              <select id="duration">
-                <option value="300" selected>5 min</option>
-                <option value="900">15 min</option>
-                <option value="1800">30 min</option>
-                <option value="3600">60 min</option>
-                <option value="86400">1 day</option>
-                <option value="259200">3 days</option>
-                <option value="604800">1 week</option>
-                <option value="2592000">1 month</option>
-              </select>
+              <input id="duration" type="hidden" value="3600" />
+              <div id="duration-picker" class="form-picker duration-picker">
+                <button
+                  id="duration-picker-trigger"
+                  class="form-picker__trigger duration-picker__trigger"
+                  type="button"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                >
+                  <span id="duration-picker-value" class="form-picker__value">60 min</span>
+                  <span class="market-filter__caret" aria-hidden="true"></span>
+                </button>
+                <div id="duration-picker-menu" class="form-picker__menu duration-picker__menu" role="listbox" hidden>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="300">5 min</button>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="900">15 min</button>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="1800">30 min</button>
+                  <button class="form-picker__option duration-picker__option is-selected" type="button" data-duration-value="3600">60 min</button>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="86400">1 day</button>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="259200">3 days</button>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="604800">1 week</button>
+                  <button class="form-picker__option duration-picker__option" type="button" data-duration-value="2592000">1 month</button>
+                </div>
+              </div>
             </label>
 
             <p id="create-current-price" class="field-hint">Current price: loading…</p>
@@ -186,6 +199,6 @@
       </nav>
     </div>
 
-    <script src="./app.js?v=20260404d"></script>
+    <script src="./app.js?v=20260404f"></script>
   </body>
 </html>

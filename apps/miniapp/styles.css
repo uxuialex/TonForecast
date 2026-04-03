@@ -28,6 +28,7 @@
   --r-sm: 12px;
   --r-pill: 999px;
   --nav-h: 66px;
+  --create-control-h: 56px;
   --safe-b: env(safe-area-inset-bottom, 0px);
 }
 
@@ -487,40 +488,50 @@ main {
   transform: scale(0.98);
 }
 
-/* --- Asset picker (create asset combobox) --------------------- */
+/* --- Create form pickers -------------------------------------- */
 
-.asset-picker {
+.form-picker,
+.asset-picker,
+.duration-picker {
   position: relative;
   width: 100%;
 }
 
-.asset-picker__trigger {
+.form-picker__trigger {
   width: 100%;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 13px 16px;
+  min-height: var(--create-control-h);
+  padding: 10px 16px;
   border: 1px solid var(--border);
   border-radius: var(--r-sm);
   background: rgba(255, 255, 255, 0.025);
   color: var(--text);
   font-size: 15px;
+  line-height: 1.2;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
   -webkit-tap-highlight-color: transparent;
 }
 
-.asset-picker__trigger:focus,
-.asset-picker__trigger:hover,
-.asset-picker.is-open .asset-picker__trigger {
+.form-picker__trigger:focus,
+.form-picker__trigger:hover,
+.form-picker.is-open .form-picker__trigger {
   outline: none;
   border-color: rgba(79, 172, 254, 0.4);
   box-shadow: 0 0 0 3px rgba(79, 172, 254, 0.08);
   background: rgba(255, 255, 255, 0.04);
 }
 
-.asset-picker__menu {
+.form-picker__value {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.form-picker__menu {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
@@ -544,13 +555,13 @@ main {
     transform 0.18s ease;
 }
 
-.asset-picker__menu.is-visible {
+.form-picker__menu.is-visible {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
-.asset-picker__option {
+.form-picker__option {
   width: 100%;
   padding: 10px 12px;
   border: 1px solid transparent;
@@ -567,22 +578,23 @@ main {
     transform 0.12s ease;
 }
 
-.asset-picker__option:hover,
-.asset-picker__option:focus {
+.form-picker__option:hover,
+.form-picker__option:focus {
   outline: none;
   background: rgba(255, 255, 255, 0.04);
 }
 
-.asset-picker__option.is-selected {
+.form-picker__option.is-selected {
   background: var(--accent-dim);
   border-color: rgba(79, 172, 254, 0.22);
   color: var(--accent);
 }
 
-.asset-picker__option:active {
+.form-picker__option:active {
   transform: scale(0.98);
 }
 
+.form-picker__item,
 .asset-picker__item {
   display: inline-flex;
   align-items: center;
@@ -590,6 +602,7 @@ main {
   min-width: 0;
 }
 
+.form-picker__label,
 .asset-picker__label {
   font-weight: 600;
   white-space: nowrap;
@@ -1005,12 +1018,14 @@ select {
   appearance: none;
   -webkit-appearance: none;
   width: 100%;
-  padding: 13px 16px;
+  min-height: var(--create-control-h);
+  padding: 10px 16px;
   border-radius: var(--r-sm);
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.025);
   color: var(--text);
   font-size: 15px;
+  line-height: 1.2;
   cursor: pointer;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
@@ -1352,6 +1367,9 @@ select:focus {
   .ticker-strip.is-hidden,
   .market-filter__menu,
   .market-filter__menu.is-visible,
+  .form-picker__menu,
+  .form-picker__menu.is-visible,
+  .form-picker__option,
   .asset-picker__menu,
   .asset-picker__menu.is-visible,
   .asset-picker__option,

@@ -66,6 +66,13 @@ const assetPickerOptionEls = Array.from(
   document.querySelectorAll(".asset-picker__option"),
 );
 const durationEl = document.querySelector("#duration");
+const durationPickerEl = document.querySelector("#duration-picker");
+const durationPickerTriggerEl = document.querySelector("#duration-picker-trigger");
+const durationPickerValueEl = document.querySelector("#duration-picker-value");
+const durationPickerMenuEl = document.querySelector("#duration-picker-menu");
+const durationPickerOptionEls = Array.from(
+  document.querySelectorAll(".duration-picker__option"),
+);
 const previewQuestionEl = document.querySelector("#preview-question");
 const walletStatusEl = document.querySelector("#wallet-status");
 const walletAddressEl = document.querySelector("#wallet-address");
@@ -347,6 +354,14 @@ function formatDurationLabel(durationSec) {
     return `${hours} ${hours === 1 ? "hour" : "hours"}`;
   }
   return `${numeric / 60} min`;
+}
+
+function getDurationOptionLabel(durationSec) {
+  const value = String(durationSec ?? "");
+  return (
+    durationPickerOptionEls.find((option) => option.dataset.durationValue === value)?.textContent?.trim() ??
+    formatDurationLabel(durationSec)
+  );
 }
 
 function formatCountdown(timestampSec) {
@@ -1175,6 +1190,21 @@ function closeAssetPicker() {
   }, 180);
 }
 
+function closeDurationPicker() {
+  if (!durationPickerEl || !durationPickerTriggerEl || !durationPickerMenuEl) {
+    return;
+  }
+
+  durationPickerEl.classList.remove("is-open");
+  durationPickerMenuEl.classList.remove("is-visible");
+  durationPickerTriggerEl.setAttribute("aria-expanded", "false");
+  window.setTimeout(() => {
+    if (!durationPickerEl.classList.contains("is-open")) {
+      durationPickerMenuEl.hidden = true;
+    }
+  }, 180);
+}
+
 function syncMarketFilterUi() {
   if (!marketFilterLabelEl) {
     return;
@@ -1200,6 +1230,21 @@ function syncAssetPickerUi() {
     const asset = option.dataset.assetValue;
     option.innerHTML = buildAssetPickerItemHtml(asset);
     option.classList.toggle("is-selected", asset === selectedAsset);
+  });
+}
+
+function syncDurationPickerUi() {
+  if (!durationPickerValueEl || !durationEl) {
+    return;
+  }
+
+  const selectedDuration = durationEl.value || "3600";
+  durationPickerValueEl.textContent = getDurationOptionLabel(selectedDuration);
+  durationPickerOptionEls.forEach((option) => {
+    option.classList.toggle(
+      "is-selected",
+      option.dataset.durationValue === selectedDuration,
+    );
   });
 }
 
@@ -1251,6 +1296,9 @@ if (assetPickerTriggerEl && assetPickerMenuEl) {
 
   assetPickerTriggerEl.addEventListener("click", () => {
     const nextOpen = !assetPickerEl.classList.contains("is-open");
+    if (nextOpen) {
+      closeDurationPicker();
+    }
     assetPickerEl.classList.toggle("is-open", nextOpen);
     assetPickerTriggerEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
     if (nextOpen) {
@@ -1291,6 +1339,58 @@ if (assetPickerTriggerEl && assetPickerMenuEl) {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") {
       closeAssetPicker();
+    }
+  });
+}
+
+if (durationPickerTriggerEl && durationPickerMenuEl) {
+  syncDurationPickerUi();
+
+  durationPickerTriggerEl.addEventListener("click", () => {
+    const nextOpen = !durationPickerEl.classList.contains("is-open");
+    if (nextOpen) {
+      closeAssetPicker();
+    }
+    durationPickerEl.classList.toggle("is-open", nextOpen);
+    durationPickerTriggerEl.setAttribute("aria-expanded", nextOpen ? "true" : "false");
+    if (nextOpen) {
+      durationPickerMenuEl.hidden = false;
+      requestAnimationFrame(() => {
+        durationPickerMenuEl.classList.add("is-visible");
+      });
+      return;
+    }
+
+    closeDurationPicker();
+  });
+
+  durationPickerMenuEl.addEventListener("click", (event) => {
+    const option = event.target.closest(".duration-picker__option");
+    if (!option) {
+      return;
+    }
+
+    const duration = option.dataset.durationValue;
+    if (!duration || duration === durationEl.value) {
+      closeDurationPicker();
+      return;
+    }
+
+    durationEl.value = duration;
+    syncDurationPickerUi();
+    closeDurationPicker();
+    durationEl.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!durationPickerEl.contains(event.target)) {
+      closeDurationPicker();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closeDurationPicker();
     }
   });
 }
