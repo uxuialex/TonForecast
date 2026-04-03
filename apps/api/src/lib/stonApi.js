@@ -5,6 +5,7 @@ import { ensureRuntimeEnvLoaded } from "./runtimeEnv.js";
 
 const STON_API_BASE = "https://api.ston.fi";
 const CMC_API_BASE = "https://pro-api.coinmarketcap.com";
+const EXTERNAL_FETCH_TIMEOUT_MS = 4_000;
 const CMC_SLUG_BY_ASSET = {
   TON: "toncoin",
 };
@@ -27,6 +28,25 @@ function getCmcApiKey() {
   return process.env.CMC_API_KEY?.trim() || undefined;
 }
 
+async function fetchWithTimeout(url, options = {}, timeoutMs = EXTERNAL_FETCH_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(url, {
+      ...options,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(`Fetch timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 function extractCmcQuote(payload, expectedSlug) {
   const values = Object.values(payload?.data ?? {});
   const rows = values.flatMap((value) => (Array.isArray(value) ? value : value ? [value] : []));
@@ -46,7 +66,7 @@ async function fetchCmcSnapshot(asset) {
     return null;
   }
 
-  const response = await fetch(
+  const response = await fetchWithTimeout(
     `${CMC_API_BASE}/v2/cryptocurrency/quotes/latest?slug=${encodeURIComponent(slug)}&convert=USD`,
     {
       headers: {
@@ -77,7 +97,7 @@ async function fetchCmcSnapshot(asset) {
 }
 
 async function fetchStonAssetsPayload() {
-  const response = await fetch(`${STON_API_BASE}/v1/assets`);
+  const response = await fetchWithTimeout(`${STON_API_BASE}/v1/assets`);
   if (!response.ok) {
     throw new Error(`STON API returned HTTP ${response.status}`);
   }

@@ -36,6 +36,7 @@ export const MIN_BET_NANO = toNano("0.001");
 export const DEFAULT_CREATE_VALUE_NANO = toNano("0.05");
 export const DEFAULT_ACTION_VALUE_NANO = toNano("0.05");
 const DEFAULT_RPC_MAX_RETRIES = 4;
+const RPC_CALL_TIMEOUT_MS = 4_000;
 const MARKET_STATE_CACHE_TTL_MS = 8_000;
 const USER_STAKE_CACHE_TTL_MS = 8_000;
 const openedContracts = new Map();
@@ -66,6 +67,22 @@ export function addressToString(input) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function withTimeout(promise, timeoutMs, label) {
+  let timer;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function isRateLimitError(error) {
@@ -346,7 +363,9 @@ class TonForecastMarketContract {
   }
 
   async getMarketState(provider) {
-    const result = await withRpcRetry("get_market_state", () => provider.get("get_market_state", []));
+    const result = await withRpcRetry("get_market_state", () =>
+      withTimeout(provider.get("get_market_state", []), RPC_CALL_TIMEOUT_MS, "get_market_state"),
+    );
     const marketId = result.stack.readBigNumber();
     const assetId = result.stack.readBigNumber();
     const threshold = result.stack.readBigNumber();
@@ -377,9 +396,13 @@ class TonForecastMarketContract {
 
   async getUserStake(provider, userAddress) {
     const result = await withRpcRetry("get_user_stake", () =>
-      provider.get("get_user_stake", [
-        { type: "slice", cell: beginCell().storeAddress(parseAddress(userAddress)).endCell() },
-      ]));
+      withTimeout(
+        provider.get("get_user_stake", [
+          { type: "slice", cell: beginCell().storeAddress(parseAddress(userAddress)).endCell() },
+        ]),
+        RPC_CALL_TIMEOUT_MS,
+        "get_user_stake",
+      ));
 
     return {
       yesAmount: result.stack.readBigNumber(),
