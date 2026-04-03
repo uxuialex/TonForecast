@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TonForecast</title>
+    <meta
+      name="description"
+      content="Telegram-native short-term prediction market on TON."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Telegram Mini App • TON</p>
+          <h1>TonForecast</h1>
+          <p class="hero-copy">
+            Short-term onchain prediction markets for TON, BTC, and ETH. Create a
+            market, place a bet, wait for automatic resolution, then claim.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button class="ghost-button">Testnet</button>
+          <button class="primary-button">Connect Wallet</button>
+        </div>
+      </header>
+
+      <section class="ticker-strip" aria-label="Live prices">
+        <div class="ticker-pill">TON <span>$3.42</span> <em>+1.8%</em></div>
+        <div class="ticker-pill">BTC <span>$68,450</span> <em>-0.4%</em></div>
+        <div class="ticker-pill">ETH <span>$3,540</span> <em>+0.9%</em></div>
+      </section>
+
+      <nav class="tabbar" aria-label="Sections">
+        <button class="tab is-active" data-tab="markets">Markets</button>
+        <button class="tab" data-tab="create">Create</button>
+        <button class="tab" data-tab="positions">My Positions</button>
+      </nav>
+
+      <main>
+        <section class="panel is-active" data-panel="markets">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Open markets</p>
+              <h2>Live market list</h2>
+            </div>
+            <div class="filter-group">
+              <button class="filter is-active">Open</button>
+              <button class="filter">Resolving</button>
+              <button class="filter">Resolved</button>
+            </div>
+          </div>
+
+          <div class="market-grid">
+            <article class="market-card">
+              <div class="market-topline">
+                <span class="asset-badge tone-blue">TON</span>
+                <span class="status-pill">OPEN</span>
+              </div>
+              <h3>Will TON be above $3.42 in 60 seconds?</h3>
+              <dl class="market-stats">
+                <div><dt>Current</dt><dd>$3.41</dd></div>
+                <div><dt>Threshold</dt><dd>$3.42</dd></div>
+                <div><dt>Timer</dt><dd>00:41</dd></div>
+                <div><dt>YES pool</dt><dd>128 TON</dd></div>
+                <div><dt>NO pool</dt><dd>91 TON</dd></div>
+              </dl>
+              <div class="card-actions">
+                <button class="yes-button">Bet YES</button>
+                <button class="no-button">Bet NO</button>
+              </div>
+            </article>
+
+            <article class="market-card">
+              <div class="market-topline">
+                <span class="asset-badge tone-orange">BTC</span>
+                <span class="status-pill">OPEN</span>
+              </div>
+              <h3>Will BTC be below $68,450 in 30 seconds?</h3>
+              <dl class="market-stats">
+                <div><dt>Current</dt><dd>$68,471</dd></div>
+                <div><dt>Threshold</dt><dd>$68,450</dd></div>
+                <div><dt>Timer</dt><dd>00:19</dd></div>
+                <div><dt>YES pool</dt><dd>74 TON</dd></div>
+                <div><dt>NO pool</dt><dd>112 TON</dd></div>
+              </dl>
+              <div class="card-actions">
+                <button class="yes-button">Bet YES</button>
+                <button class="no-button">Bet NO</button>
+              </div>
+            </article>
+
+            <article class="market-card">
+              <div class="market-topline">
+                <span class="asset-badge tone-green">ETH</span>
+                <span class="status-pill is-locking">LOCKED</span>
+              </div>
+              <h3>Will ETH be above $3,540 in 60 seconds?</h3>
+              <dl class="market-stats">
+                <div><dt>Current</dt><dd>$3,544</dd></div>
+                <div><dt>Threshold</dt><dd>$3,540</dd></div>
+                <div><dt>Status</dt><dd>Resolving</dd></div>
+                <div><dt>YES pool</dt><dd>151 TON</dd></div>
+                <div><dt>NO pool</dt><dd>104 TON</dd></div>
+              </dl>
+              <div class="card-actions">
+                <button class="ghost-button">View Market</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="create">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Create market</p>
+              <h2>Fast preset flow</h2>
+            </div>
+          </div>
+
+          <div class="create-layout">
+            <form class="create-card">
+              <label>
+                Asset
+                <select id="asset">
+                  <option value="TON">TON</option>
+                  <option value="BTC">BTC</option>
+                  <option value="ETH">ETH</option>
+                </select>
+              </label>
+
+              <label>
+                Direction
+                <select id="direction">
+                  <option value="above">above</option>
+                  <option value="below">below</option>
+                </select>
+              </label>
+
+              <label>
+                Duration
+                <select id="duration">
+                  <option value="30">30 sec</option>
+                  <option value="60" selected>60 sec</option>
+                </select>
+              </label>
+
+              <label>
+                Threshold preset
+                <select id="threshold">
+                  <option value="3.42">3.42</option>
+                  <option value="3.43">3.43</option>
+                  <option value="3.44">3.44</option>
+                </select>
+              </label>
+
+              <button type="button" class="primary-button wide-button">
+                Create Market
+              </button>
+            </form>
+
+            <aside class="preview-card">
+              <p class="section-kicker">Preview</p>
+              <h3 id="preview-question">Will TON be above $3.42 in 60 seconds?</h3>
+              <ul class="preview-list">
+                <li>Resolution source: resolver + STON.fi market data</li>
+                <li>Settlement model: proportional bet pool</li>
+                <li>MVP scope: objective short-term price events only</li>
+              </ul>
+            </aside>
+          </div>
+        </section>
+
+        <section class="panel" data-panel="positions">
+          <div class="panel-header">
+            <div>
+              <p class="section-kicker">Portfolio</p>
+              <h2>My positions</h2>
+            </div>
+          </div>
+
+          <div class="positions-list">
+            <article class="position-row">
+              <div>
+                <p class="position-title">TON above $3.42 in 60s</p>
+                <p class="position-meta">Bet YES • 15 TON</p>
+              </div>
+              <span class="claim-pill is-open">OPEN</span>
+            </article>
+
+            <article class="position-row">
+              <div>
+                <p class="position-title">BTC below $68,450 in 30s</p>
+                <p class="position-meta">Bet NO • 24 TON</p>
+              </div>
+              <span class="claim-pill is-win">CLAIMABLE</span>
+              <button class="primary-button compact-button">Claim</button>
+            </article>
+
+            <article class="position-row">
+              <div>
+                <p class="position-title">ETH above $3,500 in 60s</p>
+                <p class="position-meta">Bet YES • 10 TON</p>
+              </div>
+              <span class="claim-pill is-loss">LOST</span>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>
