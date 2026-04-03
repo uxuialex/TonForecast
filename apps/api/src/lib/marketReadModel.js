@@ -35,6 +35,7 @@ const MARKET_VIEW_CACHE_TTL_MS = 8_000;
 const POSITION_READ_CONCURRENCY = 2;
 const POSITION_SCAN_LIMIT = 8;
 const POSITION_CACHE_TTL_MS = 15_000;
+const CHAIN_CONFIRM_TIMEOUT_SEC = 120;
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
 const positionsCache = new Map();
@@ -115,7 +116,34 @@ function persistSnapshotIfChanged(record, snapshot) {
   });
 }
 
+function isBrokenPendingChainRecord(record, nowSec) {
+  if (record.createFailedAt) {
+    return true;
+  }
+
+  if (record.lastKnownStatus) {
+    return false;
+  }
+
+  const confirmationBaseSec = Number(record.confirmedAt ?? record.createdAt ?? 0);
+  if (!confirmationBaseSec) {
+    return false;
+  }
+
+  return confirmationBaseSec + CHAIN_CONFIRM_TIMEOUT_SEC <= nowSec;
+}
+
 async function buildMarketFromRecord(record, snapshotMap, nowSec) {
+  if (isBrokenPendingChainRecord(record, nowSec)) {
+    if (!record.createFailedAt) {
+      saveMarketRecord({
+        contractAddress: record.contractAddress,
+        createFailedAt: nowSec,
+      });
+    }
+    return null;
+  }
+
   const snapshot = snapshotMap.get(record.asset);
   const currentPrice = Number(snapshot?.priceUsd ?? record.currentPriceAtCreate ?? 0);
   const iconUrl = snapshot?.iconUrl ?? `/api/assets/icons/${encodeURIComponent(record.asset)}`;
@@ -160,6 +188,16 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
       outcome = persistedSnapshot.outcome;
       onchainReady = true;
     } else {
+      if (isBrokenPendingChainRecord(record, nowSec)) {
+        if (!record.createFailedAt) {
+          saveMarketRecord({
+            contractAddress: record.contractAddress,
+            createFailedAt: nowSec,
+          });
+        }
+        return null;
+      }
+
       const fallbackStatus =
         Number(record.resolveAt) <= nowSec
           ? "LOCKED"
@@ -204,21 +242,23 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
 }
 
 function getCandidateRecords(records, status, nowSec) {
+  const validRecords = records.filter((record) => !record.createFailedAt);
+
   if (status === "OPEN") {
-    return records.filter((record) => Number(record.closeAt) > nowSec);
+    return validRecords.filter((record) => Number(record.closeAt) > nowSec);
   }
 
   if (status === "LOCKED") {
-    return records.filter(
+    return validRecords.filter(
       (record) => Number(record.closeAt) <= nowSec && Number(record.resolveAt) > nowSec,
     );
   }
 
   if (status === "RESOLVED") {
-    return records.filter((record) => Number(record.resolveAt) <= nowSec);
+    return validRecords.filter((record) => Number(record.resolveAt) <= nowSec);
   }
 
-  return records;
+  return validRecords;
 }
 
 function getCachedMarketViews(cacheKey) {
@@ -270,11 +310,12 @@ async function buildMarkets(status = "") {
     records.map((record) => buildMarketFromRecord(record, snapshotMap, nowSec)),
   )
     .then((items) => {
+      const normalizedItems = items.filter(Boolean);
       marketViewCache.set(cacheKey, {
-        items,
+        items: normalizedItems,
         expiresAtMs: Date.now() + MARKET_VIEW_CACHE_TTL_MS,
       });
-      return items;
+      return normalizedItems;
     })
     .finally(() => {
       marketViewInflight.delete(cacheKey);
@@ -328,6 +369,7 @@ export async function getMarketById(marketId) {
 async function buildPositions(userAddress) {
   const records = listMarketRecords();
   const sortedRecords = [...records]
+    .filter((record) => !record.createFailedAt)
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
     .slice(0, POSITION_SCAN_LIMIT);
   const nowSec = Math.floor(Date.now() / 1000);
@@ -347,6 +389,10 @@ async function buildPositions(userAddress) {
         }
 
         const marketView = await buildMarketFromRecord(record, snapshotMap, nowSec);
+        if (!marketView) {
+          return null;
+        }
+
         const side = amountYesTon > 0 ? "YES" : "NO";
         return buildPositionView(
           {
