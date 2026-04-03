@@ -90,6 +90,7 @@ export async function run(provider: NetworkProvider) {
     ui.write(`create_market sent to ${contract.address.toString()}`);
     ui.write(`market_id=${state.marketId.toString()}`);
     ui.write(`asset=${state.assetIdText}`);
+    ui.write(`price_source=${quote.source}`);
     ui.write(`current_price=$${formatPrice6(quote.priceUsd)}`);
     ui.write(`threshold=$${formatPrice6(threshold)}`);
     ui.write(`direction=${directionLabel}`);

@@ -171,7 +171,7 @@ async function fetchAutomaticFinalPrice(contract: OpenedTonForecastMarket) {
         const quote = await fetchDefaultAssetQuote(state.assetIdText);
         return {
             finalPrice: quote.priceUsd,
-            priceSource: `STON API default symbol ${quote.symbol}`,
+            priceSource: quote.source,
             state,
         };
     }

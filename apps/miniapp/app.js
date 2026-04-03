@@ -341,7 +341,7 @@ function syncPreview() {
     `Will ${asset} be above live market price in ${formatDurationLabel(duration)}?`;
   createCurrentPriceEl.textContent = state.createContext.blockedReason
     ? `${currentPriceText} • ${state.createContext.blockedReason}`
-    : `${currentPriceText} • Fixed on signature. Resolver source: STON.fi`;
+    : `${currentPriceText} • Fixed on signature. Price source: CMC for TON, STON.fi for ecosystem tokens.`;
 }
 
 function syncCreateButtonState() {

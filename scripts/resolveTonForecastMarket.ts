@@ -40,7 +40,7 @@ export async function run(provider: NetworkProvider) {
         if (state.assetIdText) {
             const quote = await fetchDefaultAssetQuote(state.assetIdText);
             finalPrice = quote.priceUsd;
-            priceSource = `STON API default symbol ${quote.symbol}`;
+            priceSource = quote.source;
         } else {
             throw new Error('market asset id is missing');
         }
