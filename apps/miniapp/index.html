@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260404c" />
+    <link rel="stylesheet" href="./styles.css?v=20260404d" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.0.11/dist/tonconnect-ui.min.js"></script>
   </head>
@@ -90,7 +90,7 @@
                   aria-expanded="false"
                 >
                   <span id="asset-picker-value" class="form-picker__value"></span>
-                  <span class="market-filter__caret" aria-hidden="true"></span>
+                  <span class="form-picker__caret" aria-hidden="true"></span>
                 </button>
                 <div id="asset-picker-menu" class="form-picker__menu asset-picker__menu" role="listbox" hidden>
                   <button class="form-picker__option asset-picker__option is-selected" type="button" data-asset-value="TON"></button>
@@ -115,7 +115,7 @@
                   aria-expanded="false"
                 >
                   <span id="duration-picker-value" class="form-picker__value">60 min</span>
-                  <span class="market-filter__caret" aria-hidden="true"></span>
+                  <span class="form-picker__caret" aria-hidden="true"></span>
                 </button>
                 <div id="duration-picker-menu" class="form-picker__menu duration-picker__menu" role="listbox" hidden>
                   <button class="form-picker__option duration-picker__option" type="button" data-duration-value="300">5 min</button>
@@ -175,6 +175,7 @@
       </main>
 
       <nav class="bottom-nav">
+        <span id="bottom-nav-indicator" class="bottom-nav__indicator" aria-hidden="true"></span>
         <button class="tab is-active" data-tab="markets">
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
             <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
@@ -199,6 +200,6 @@
       </nav>
     </div>
 
-    <script src="./app.js?v=20260404f"></script>
+    <script src="./app.js?v=20260404g"></script>
   </body>
 </html>

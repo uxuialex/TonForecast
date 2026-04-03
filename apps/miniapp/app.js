@@ -57,6 +57,8 @@ function assetBadgeHtml(symbol, iconUrl) {
 
 const tabs = document.querySelectorAll(".tab");
 const panels = document.querySelectorAll(".panel");
+const bottomNavEl = document.querySelector(".bottom-nav");
+const bottomNavIndicatorEl = document.querySelector("#bottom-nav-indicator");
 const assetEl = document.querySelector("#asset");
 const assetPickerEl = document.querySelector("#asset-picker");
 const assetPickerTriggerEl = document.querySelector("#asset-picker-trigger");
@@ -147,6 +149,22 @@ function getActivePanelName() {
   return state.activePanel;
 }
 
+function syncBottomNavIndicator() {
+  if (!bottomNavEl || !bottomNavIndicatorEl) {
+    return;
+  }
+
+  const activeTab = Array.from(tabs).find((tab) => tab.classList.contains("is-active"));
+  if (!activeTab) {
+    return;
+  }
+
+  const navRect = bottomNavEl.getBoundingClientRect();
+  const tabRect = activeTab.getBoundingClientRect();
+  bottomNavEl.style.setProperty("--indicator-x", `${tabRect.left - navRect.left}px`);
+  bottomNavEl.style.setProperty("--indicator-w", `${tabRect.width}px`);
+}
+
 function switchPanel(nextPanelName) {
   const currentPanel = document.querySelector(".panel.is-active");
   const nextPanel = document.querySelector(`.panel[data-panel="${nextPanelName}"]`);
@@ -159,6 +177,7 @@ function switchPanel(nextPanelName) {
   state.activePanel = nextPanelName;
   syncPriceStripVisibility(nextPanelName);
   tabs.forEach((item) => item.classList.toggle("is-active", item.dataset.tab === nextPanelName));
+  requestAnimationFrame(syncBottomNavIndicator);
 
   nextPanel.classList.add("is-active", "is-entering");
   requestAnimationFrame(() => {
@@ -196,6 +215,8 @@ tabs.forEach((tab) => {
 
 document.querySelector(".panel.is-active")?.classList.add("is-visible");
 syncPriceStripVisibility(document.querySelector(".panel.is-active")?.dataset.panel ?? "markets");
+requestAnimationFrame(syncBottomNavIndicator);
+window.addEventListener("resize", syncBottomNavIndicator);
 
 function shortAddress(value) {
   return `${value.slice(0, 6)}...${value.slice(-6)}`;

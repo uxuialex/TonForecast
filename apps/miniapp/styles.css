@@ -531,6 +531,26 @@ main {
   min-width: 0;
 }
 
+.form-picker__caret {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  margin-right: 2px;
+  border-right: 2px solid rgba(228, 232, 241, 0.72);
+  border-bottom: 2px solid rgba(228, 232, 241, 0.72);
+  transform: rotate(45deg) translateY(-2px);
+  transition:
+    transform 0.18s ease,
+    border-color 0.18s ease,
+    opacity 0.18s ease;
+  opacity: 0.92;
+}
+
+.form-picker.is-open .form-picker__caret {
+  transform: rotate(-135deg) translateY(-1px);
+  border-color: var(--accent);
+}
+
 .form-picker__menu {
   position: absolute;
   top: calc(100% + 8px);
@@ -1260,28 +1280,57 @@ select:focus {
 /* --- Bottom nav ----------------------------------------------- */
 
 .bottom-nav {
+  --indicator-x: 0px;
+  --indicator-w: 0px;
   position: fixed;
   bottom: 0;
   left: 0;
   right: 0;
   z-index: 100;
   display: flex;
-  justify-content: space-around;
+  justify-content: space-between;
   align-items: center;
   height: calc(var(--nav-h) + var(--safe-b));
-  padding-bottom: var(--safe-b);
+  padding: 8px 12px var(--safe-b);
   background: rgba(8, 11, 22, 0.82);
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
   border-top: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.bottom-nav__indicator {
+  position: absolute;
+  top: 8px;
+  bottom: calc(var(--safe-b) + 6px);
+  left: 0;
+  width: var(--indicator-w);
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(79, 172, 254, 0.18), rgba(124, 58, 237, 0.14));
+  border: 1px solid rgba(79, 172, 254, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 10px 26px rgba(79, 172, 254, 0.12);
+  transform: translateX(var(--indicator-x));
+  transition:
+    transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.18s ease;
+  pointer-events: none;
+  opacity: 1;
 }
 
 .tab {
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  padding: 8px 20px;
+  justify-content: center;
+  min-width: 0;
+  min-height: calc(var(--nav-h) - 14px);
+  padding: 8px 12px;
   border: none;
   background: none;
   color: var(--dim);
@@ -1291,10 +1340,12 @@ select:focus {
   transition: color 0.2s ease;
   -webkit-tap-highlight-color: transparent;
   position: relative;
+  z-index: 1;
+  border-radius: 18px;
 }
 
 .tab svg {
-  transition: color 0.2s ease, filter 0.2s ease;
+  transition: color 0.2s ease, filter 0.2s ease, transform 0.22s ease;
 }
 
 .tab.is-active {
@@ -1302,20 +1353,12 @@ select:focus {
 }
 
 .tab.is-active svg {
+  transform: translateY(-1px);
   filter: drop-shadow(0 0 6px rgba(79, 172, 254, 0.45));
 }
 
-.tab.is-active::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 28px;
-  height: 2px;
-  border-radius: 0 0 2px 2px;
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent);
+.tab:active {
+  transform: scale(0.98);
 }
 
 /* --- Scrollbar hide ------------------------------------------- */
@@ -1370,11 +1413,14 @@ select:focus {
   .form-picker__menu,
   .form-picker__menu.is-visible,
   .form-picker__option,
+  .form-picker__caret,
   .asset-picker__menu,
   .asset-picker__menu.is-visible,
   .asset-picker__option,
   .market-filter__option,
-  .market-filter__caret {
+  .market-filter__caret,
+  .bottom-nav__indicator,
+  .tab svg {
     transition: none;
     animation: none;
   }
