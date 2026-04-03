@@ -598,6 +598,44 @@ main {
   gap: 10px;
 }
 
+.market-topline__meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.market-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--dim);
+  text-decoration: none;
+  font-size: 16px;
+  line-height: 1;
+  transition:
+    border-color 0.18s ease,
+    background 0.18s ease,
+    color 0.18s ease,
+    transform 0.12s ease;
+}
+
+.market-link:hover,
+.market-link:focus {
+  outline: none;
+  color: var(--accent);
+  border-color: rgba(79, 172, 254, 0.24);
+  background: rgba(79, 172, 254, 0.08);
+}
+
+.market-link:active {
+  transform: scale(0.97);
+}
+
 .market-card h3,
 .preview-box h3 {
   margin-top: 14px;

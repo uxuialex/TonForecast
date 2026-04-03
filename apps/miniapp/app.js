@@ -272,6 +272,19 @@ function getClaimClass(status) {
   return "claim-pill is-open";
 }
 
+function getClaimButtonLabel(position) {
+  if (position.claimable) return "Claim";
+  if (position.claimed) return "Claimed";
+  if (position.positionStatus === "LOCKED") return "Awaiting resolve";
+  if (position.positionStatus === "LOST") return "Lost";
+  if (position.positionStatus === "OPEN") return "Open";
+  return "Claim";
+}
+
+function getExplorerUrl(address) {
+  return `https://tonviewer.com/${encodeURIComponent(address)}`;
+}
+
 function getOutcomeLabel(outcome) {
   if (outcome === "YES") return "Yes";
   if (outcome === "NO") return "No";
@@ -426,14 +439,24 @@ function renderMarkets(items) {
         <article class="market-card" data-market-address="${market.contractAddress}">
           <div class="market-topline">
             ${assetBadgeHtml(market.token, market.iconUrl)}
-            <span class="${getStatusClass(effectiveStatus)}">${market.statusLabel}</span>
+            <div class="market-topline__meta">
+              <span class="${getStatusClass(effectiveStatus)}">${market.statusLabel}</span>
+              <a
+                class="market-link"
+                href="${getExplorerUrl(market.contractAddress)}"
+                target="_blank"
+                rel="noreferrer noopener"
+                aria-label="Open market on explorer"
+                title="Open on explorer"
+              >↗</a>
+            </div>
           </div>
           <h3>${market.question}</h3>
           <dl class="market-stats">
             <div><dt>Current</dt><dd>${market.currentPriceLabel}</dd></div>
-            <div><dt>Threshold</dt><dd>${market.thresholdLabel}</dd></div>
             <div><dt>Direction</dt><dd>${market.directionLabel}</dd></div>
             <div><dt>${statusMeta.statusText}</dt><dd>${statusMeta.statusValue}</dd></div>
+            <div><dt>Close</dt><dd>${new Date(market.closeAt * 1000).toLocaleTimeString()}</dd></div>
             <div><dt>Up pool</dt><dd>${market.yesPoolLabel}</dd></div>
             <div><dt>Down pool</dt><dd>${market.noPoolLabel}</dd></div>
             <div><dt>Final price</dt><dd>${market.finalPriceLabel}</dd></div>
@@ -489,7 +512,7 @@ function renderPositions(items) {
             data-action="claim"
             ${position.claimable && state.wallet ? "" : "disabled"}
           >
-            ${position.claimable ? "Claim" : position.claimed ? "Claimed" : "Claim"}
+            ${getClaimButtonLabel(position)}
           </button>
         </article>
       `,
@@ -666,7 +689,11 @@ async function handleClaimIntent(positionId) {
   }
 
   if (!position.claimable) {
-    setActionFeedback(`Claim unavailable: ${position.positionStatusLabel}.`);
+    setActionFeedback(
+      position.positionStatus === "LOCKED"
+        ? "Claim unavailable: market is closed for bets and waiting for auto-resolve."
+        : `Claim unavailable: ${position.positionStatusLabel}.`,
+    );
     return;
   }
 
@@ -904,7 +931,7 @@ setInterval(() => {
   if (state.wallet && getActivePanelName() === "profile") {
     loadPositions();
   }
-}, 20000);
+}, 10000);
 
 loadPrices();
 loadMarkets(state.activeMarketStatus);

@@ -221,7 +221,7 @@ export function getPositionStatusLabel(status) {
   if (status === "CLAIMABLE") return "Claimable";
   if (status === "CLAIMED") return "Claimed";
   if (status === "LOST") return "Lost";
-  if (status === "LOCKED") return "Closed";
+  if (status === "LOCKED") return "Awaiting resolve";
   if (status === "OPEN") return "Open";
   return "No position";
 }
