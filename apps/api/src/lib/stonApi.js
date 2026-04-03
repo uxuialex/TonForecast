@@ -1,17 +1,9 @@
-import { SUPPORTED_ASSETS, formatUsd } from "../../../../packages/shared/src/index.js";
+import { SUPPORTED_ASSETS, formatAssetUsd, getAssetUsdPrecision } from "../../../../packages/shared/src/index.js";
 import { assetSnapshots as fallbackSnapshots } from "../data/mockMarkets.js";
 import { getAssetIconUrl } from "./assets.js";
 
 const STON_API_BASE = "https://api.ston.fi";
 const SNAPSHOT_CACHE_TTL_MS = 15_000;
-const PRECISION_BY_ASSET = {
-  TON: 4,
-  STON: 6,
-  tsTON: 6,
-  UTYA: 6,
-  MAJOR: 6,
-  REDO: 6,
-};
 let snapshotCache = null;
 let snapshotCacheExpiresAtMs = 0;
 let snapshotInflight = null;
@@ -21,7 +13,7 @@ function toSnapshotMap(items) {
 }
 
 function normalizePrice(raw, asset) {
-  const precision = PRECISION_BY_ASSET[asset] ?? 6;
+  const precision = getAssetUsdPrecision(asset);
   return Number(raw).toFixed(precision);
 }
 
@@ -103,7 +95,7 @@ export async function getThresholdPresets(asset, direction = "above") {
   }
 
   const current = Number(snapshot.priceUsd);
-  const precision = PRECISION_BY_ASSET[asset] ?? 6;
+  const precision = getAssetUsdPrecision(asset);
   const multipliers =
     direction === "below" ? [0.995, 0.99, 0.985] : [1.005, 1.01, 1.015];
   const thresholds = multipliers.map((multiplier) =>
@@ -112,7 +104,7 @@ export async function getThresholdPresets(asset, direction = "above") {
 
   return {
     currentPrice: snapshot.priceUsd,
-    currentPriceLabel: `$${formatUsd(snapshot.priceUsd)}`,
+    currentPriceLabel: `$${formatAssetUsd(snapshot.priceUsd, asset)}`,
     thresholds,
   };
 }

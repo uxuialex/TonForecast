@@ -1,4 +1,4 @@
-import { SUPPORTED_ASSETS, formatUsd } from "../../../../packages/shared/src/index.js";
+import { SUPPORTED_ASSETS, formatAssetUsd, formatUsd } from "../../../../packages/shared/src/index.js";
 import { toNano } from "@ton/core";
 import {
   consumePendingCreate,
@@ -129,9 +129,9 @@ export async function getCreateContext(asset, durationSec) {
     durationSec: normalizedDuration,
     durationLabel: formatDurationLabel(normalizedDuration),
     currentPrice,
-    currentPriceLabel: `$${formatUsd(currentPrice)}`,
+    currentPriceLabel: `$${formatAssetUsd(currentPrice, asset)}`,
     threshold,
-    thresholdLabel: `$${formatUsd(threshold)}`,
+    thresholdLabel: `$${formatAssetUsd(threshold, asset)}`,
     question: buildQuestion(asset, toPrice6(snapshot.priceUsd), normalizedDuration),
     canCreate: !blockingMarket,
     blockedReason: blockingMarket ? buildCreateError(blockingMarket) : "",

@@ -2,6 +2,14 @@ export const SUPPORTED_ASSETS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"
 export const MARKET_DURATIONS = [300, 900, 1800, 3600];
 export const MARKET_DIRECTIONS = ["above", "below"];
 export const PROTOCOL_FEE_BPS = 200;
+export const ASSET_USD_PRECISION = {
+  TON: 4,
+  STON: 6,
+  tsTON: 6,
+  UTYA: 6,
+  MAJOR: 6,
+  REDO: 6,
+};
 export const MARKET_STATUSES = [
   "OPEN",
   "LOCKED",
@@ -21,6 +29,19 @@ export function formatUsd(value) {
   const fixed = numeric.toFixed(6);
   const trimmed = fixed.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, ".00");
   return trimmed.includes(".") ? trimmed : `${trimmed}.00`;
+}
+
+export function getAssetUsdPrecision(asset) {
+  return ASSET_USD_PRECISION[asset] ?? 6;
+}
+
+export function formatAssetUsd(value, asset) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) {
+    return Number(0).toFixed(getAssetUsdPrecision(asset));
+  }
+
+  return numeric.toFixed(getAssetUsdPrecision(asset));
 }
 
 export function formatTon(value) {
@@ -94,7 +115,7 @@ export function getMarketStatusLabel(status) {
 }
 
 export function buildMarketQuestion(input) {
-  return `Will ${input.token} be ${input.direction} $${formatUsd(input.threshold)} in ${formatDurationLabel(input.durationSec)}?`;
+  return `Will ${input.token} be ${input.direction} $${formatAssetUsd(input.threshold, input.token)} in ${formatDurationLabel(input.durationSec)}?`;
 }
 
 export function determineOutcome(input) {
@@ -154,9 +175,9 @@ export function buildMarketView(market, nowSec = Math.floor(Date.now() / 1000)) 
     directionLabel: getDirectionLabel(market.direction),
     statusLabel: getMarketStatusLabel(effectiveStatus),
     outcomeLabel: getMarketOutcomeLabel(market.outcome),
-    currentPriceLabel: `$${formatUsd(market.currentPrice)}`,
-    thresholdLabel: `$${formatUsd(market.threshold)}`,
-    finalPriceLabel: market.finalPrice == null ? "Pending" : `$${formatUsd(market.finalPrice)}`,
+    currentPriceLabel: `$${formatAssetUsd(market.currentPrice, market.token)}`,
+    thresholdLabel: `$${formatAssetUsd(market.threshold, market.token)}`,
+    finalPriceLabel: market.finalPrice == null ? "Pending" : `$${formatAssetUsd(market.finalPrice, market.token)}`,
     yesPoolLabel: `${formatTon(market.yesPool)} TON`,
     noPoolLabel: `${formatTon(market.noPool)} TON`,
     countdownSeconds,
