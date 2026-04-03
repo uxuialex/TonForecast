@@ -966,7 +966,7 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
   const deadlineMs = Date.now() + timeoutMs;
   while (Date.now() < deadlineMs) {
     try {
-      const positionsPayload = await requestJson(`/api/positions?userAddress=${encodeURIComponent(userAddress)}`);
+      const positionsPayload = await requestJson(`/api/positions?userAddress=${encodeURIComponent(userAddress)}&fresh=1`);
       const nextPosition = (positionsPayload.items ?? []).find((item) => item.contractAddress === contractAddress);
       if (nextPosition && Number(nextPosition.amountTon ?? 0) > previousAmountTon) {
         state.pendingBet = null;
@@ -1049,7 +1049,7 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
   const deadlineMs = Date.now() + timeoutMs;
   while (Date.now() < deadlineMs) {
     try {
-      const positionsPayload = await requestJson(`/api/positions?userAddress=${encodeURIComponent(userAddress)}`);
+      const positionsPayload = await requestJson(`/api/positions?userAddress=${encodeURIComponent(userAddress)}&fresh=1`);
       const nextPosition = (positionsPayload.items ?? []).find((item) => item.id === positionId);
       if (nextPosition?.claimed) {
         state.pendingClaim = null;
@@ -1341,7 +1341,7 @@ setInterval(() => {
   ) {
     loadPositions();
   }
-}, 20000);
+}, 30000);
 
 loadPrices();
 loadMarkets(state.activeMarketStatus);

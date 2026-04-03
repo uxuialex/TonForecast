@@ -34,8 +34,11 @@ const PRECISION_BY_ASSET = {
 const MARKET_VIEW_CACHE_TTL_MS = 8_000;
 const POSITION_READ_CONCURRENCY = 2;
 const POSITION_SCAN_LIMIT = 8;
+const POSITION_CACHE_TTL_MS = 15_000;
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
+const positionsCache = new Map();
+const positionsInflight = new Map();
 
 function toFixedPrice(asset, value) {
   const precision = PRECISION_BY_ASSET[asset] ?? 6;
@@ -160,6 +163,23 @@ function getCachedMarketViews(cacheKey) {
   return entry.items;
 }
 
+function getCachedPositions(cacheKey, { allowStale = false } = {}) {
+  const entry = positionsCache.get(cacheKey);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAtMs <= Date.now()) {
+    if (!allowStale) {
+      return null;
+    }
+
+    return entry.items;
+  }
+
+  return entry.items;
+}
+
 async function buildMarkets(status = "") {
   const cacheKey = status || "ALL";
   const cached = getCachedMarketViews(cacheKey);
@@ -233,7 +253,7 @@ export async function getMarketById(marketId) {
   return market ?? null;
 }
 
-export async function listPositions(userAddress) {
+async function buildPositions(userAddress) {
   const records = listMarketRecords();
   const sortedRecords = [...records]
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
@@ -277,6 +297,49 @@ export async function listPositions(userAddress) {
   );
 
   return entries.filter(Boolean);
+}
+
+export async function listPositions(userAddress, options = {}) {
+  const normalizedUser = String(userAddress);
+  const fresh = options.fresh === true;
+  const cacheKey = normalizedUser;
+
+  if (!fresh) {
+    const cached = getCachedPositions(cacheKey);
+    if (cached) {
+      return cached;
+    }
+  }
+
+  if (positionsInflight.has(cacheKey)) {
+    return positionsInflight.get(cacheKey);
+  }
+
+  const inflight = buildPositions(normalizedUser)
+    .then((items) => {
+      positionsCache.set(cacheKey, {
+        items,
+        expiresAtMs: Date.now() + POSITION_CACHE_TTL_MS,
+      });
+      return items;
+    })
+    .catch((error) => {
+      const stale = getCachedPositions(cacheKey, { allowStale: true });
+      if (stale) {
+        console.warn(
+          `[api] positions refresh failed for ${normalizedUser}, serving stale cache: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return stale;
+      }
+
+      throw error;
+    })
+    .finally(() => {
+      positionsInflight.delete(cacheKey);
+    });
+
+  positionsInflight.set(cacheKey, inflight);
+  return inflight;
 }
 
 export function invalidateMarketViewCache() {
