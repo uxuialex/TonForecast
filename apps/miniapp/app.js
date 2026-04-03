@@ -20,7 +20,7 @@ const TOKEN_META = {
   REDO: { color: "#10B981" },
 };
 
-const ASSET_ICON_VERSION = "20260403f";
+const ASSET_ICON_VERSION = "20260403i";
 const CREATE_ASSET_OPTIONS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
 
 const MARKET_FILTER_OPTIONS = [

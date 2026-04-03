@@ -64,7 +64,7 @@ export async function handleRequest(request) {
       return new Response(icon.body, {
         headers: {
           "content-type": icon.contentType,
-          "cache-control": "public, max-age=300, stale-while-revalidate=86400",
+          "cache-control": "public, max-age=60, stale-while-revalidate=3600",
         },
       });
     }
