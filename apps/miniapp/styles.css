@@ -39,6 +39,7 @@ select {
 }
 
 .hero,
+.wallet-panel,
 .ticker-strip,
 .tabbar,
 .market-card,
@@ -102,6 +103,31 @@ h1 {
   display: flex;
   align-items: flex-start;
   gap: 12px;
+}
+
+.ton-connect-slot {
+  min-width: 224px;
+}
+
+.wallet-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  margin-top: 20px;
+  padding: 20px 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: rgba(18, 24, 45, 0.72);
+}
+
+.wallet-panel h2 {
+  font-size: 24px;
+}
+
+.wallet-copy {
+  margin-top: 10px;
+  color: var(--muted);
+  line-height: 1.6;
 }
 
 .primary-button,
@@ -405,6 +431,7 @@ select {
 
 @media (max-width: 960px) {
   .hero,
+  .wallet-panel,
   .panel-header,
   .create-layout,
   .market-grid,
@@ -419,6 +446,10 @@ select {
   .card-actions {
     display: grid;
     grid-template-columns: 1fr 1fr;
+  }
+
+  .ton-connect-slot {
+    min-width: 0;
   }
 
   .position-row {

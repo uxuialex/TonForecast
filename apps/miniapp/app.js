@@ -17,6 +17,38 @@ const directionEl = document.querySelector("#direction");
 const durationEl = document.querySelector("#duration");
 const thresholdEl = document.querySelector("#threshold");
 const previewQuestionEl = document.querySelector("#preview-question");
+const walletStatusEl = document.querySelector("#wallet-status");
+const walletAddressEl = document.querySelector("#wallet-address");
+
+const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
+
+function shortAddress(value) {
+  return `${value.slice(0, 6)}...${value.slice(-6)}`;
+}
+
+function syncWalletState(wallet) {
+  if (!wallet) {
+    walletStatusEl.textContent = "Wallet not connected";
+    walletAddressEl.textContent =
+      "Connect a TON wallet to create markets, place bets, and claim payouts.";
+    return;
+  }
+
+  walletStatusEl.textContent = `${wallet.device.appName} connected`;
+  walletAddressEl.textContent = shortAddress(wallet.account.address);
+}
+
+if (window.TON_CONNECT_UI?.TonConnectUI) {
+  const tonConnectUI = new window.TON_CONNECT_UI.TonConnectUI({
+    manifestUrl,
+    buttonRootId: "ton-connect",
+  });
+
+  syncWalletState(tonConnectUI.wallet);
+  tonConnectUI.onStatusChange((wallet) => {
+    syncWalletState(wallet);
+  });
+}
 
 function syncThresholds() {
   const asset = assetEl.value;

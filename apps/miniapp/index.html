@@ -15,6 +15,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="./styles.css" />
+    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
   </head>
   <body>
     <div class="app-shell">
@@ -29,9 +30,19 @@
         </div>
         <div class="hero-actions">
           <button class="ghost-button">Testnet</button>
-          <button class="primary-button">Connect Wallet</button>
+          <div id="ton-connect" class="ton-connect-slot"></div>
         </div>
       </header>
+
+      <section class="wallet-panel">
+        <div>
+          <p class="section-kicker">Wallet</p>
+          <h2 id="wallet-status">Wallet not connected</h2>
+          <p id="wallet-address" class="wallet-copy">
+            Connect a TON wallet to create markets, place bets, and claim payouts.
+          </p>
+        </div>
+      </section>
 
       <section class="ticker-strip" aria-label="Live prices">
         <div class="ticker-pill">TON <span>$3.42</span> <em>+1.8%</em></div>
