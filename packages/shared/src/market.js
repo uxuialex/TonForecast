@@ -54,6 +54,17 @@ export function formatTon(value) {
   return fixed.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
 }
 
+export function formatPercent(value, precision = 2) {
+  const numeric = Number(value ?? 0);
+  if (!Number.isFinite(numeric)) {
+    return `0%`;
+  }
+
+  const fixed = numeric.toFixed(precision);
+  const trimmed = fixed.replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, "");
+  return `${trimmed}%`;
+}
+
 export function formatCountdown(secondsRemaining) {
   const safe = Math.max(0, Math.floor(Number(secondsRemaining) || 0));
   const minutes = String(Math.floor(safe / 60)).padStart(2, "0");
@@ -231,6 +242,7 @@ export function getPositionStatusLabel(status) {
 export function buildPositionView(position, marketView) {
   const isDraw = marketView.outcome === "DRAW";
   const positionStatus = derivePositionStatus(position, marketView);
+  const totalPoolTon = Number(marketView.yesPool) + Number(marketView.noPool);
   const winnerPoolTon = marketView.outcome === "YES" ? marketView.yesPool : marketView.noPool;
   const loserPoolTon = marketView.outcome === "YES" ? marketView.noPool : marketView.yesPool;
   const feeTon =
@@ -251,6 +263,12 @@ export function buildPositionView(position, marketView) {
           userStakeTon: position.amountTon,
         })
       : "0";
+  const sharePercent =
+    !isDraw &&
+    (positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED") &&
+    Number(winnerPoolTon) > 0
+      ? (Number(position.amountTon) / Number(winnerPoolTon)) * 100
+      : 0;
 
   return {
     ...position,
@@ -276,6 +294,12 @@ export function buildPositionView(position, marketView) {
           ? "Down"
           : "Up",
     amountLabel: `${formatTon(position.amountTon)} TON`,
+    totalPoolTon,
+    totalPoolLabel: `${formatTon(totalPoolTon)} TON`,
+    winningPoolTon,
+    winningPoolLabel: `${formatTon(winnerPoolTon)} TON`,
+    sharePercent,
+    shareLabel: formatPercent(sharePercent),
     payoutTon,
     payoutLabel: payoutTon === "0" ? "0 TON" : `${formatTon(payoutTon)} TON`,
     protocolFeeTon: feeTon,

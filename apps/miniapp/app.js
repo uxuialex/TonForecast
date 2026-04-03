@@ -707,7 +707,18 @@ function renderPositions(items) {
               <p class="position-meta">Your bet: ${position.betLabel}</p>
               <p class="position-meta">Result: ${position.resultLabel}</p>
               <p class="position-meta">Stake: ${position.amountLabel}</p>
-              ${(position.claimable || position.claimed) ? `<p class="position-meta">Payout: ${position.payoutLabel}</p>` : ""}
+              <p class="position-meta">Pool: ${position.totalPoolLabel}</p>
+              ${
+                (position.claimable || position.claimed) && position.marketOutcome !== "DRAW"
+                  ? `<p class="position-meta">Your share: ${position.shareLabel}</p>`
+                  : ""
+              }
+              ${
+                Number(position.protocolFeeTon ?? 0) > 0
+                  ? `<p class="position-meta">Fee: ${position.protocolFeeLabel}</p>`
+                  : ""
+              }
+              ${(position.claimable || position.claimed) ? `<p class="position-meta">Expected payout: ${position.payoutLabel}</p>` : ""}
               <p class="position-meta">State: ${position.marketStatusLabel}</p>
               <p class="position-meta">Created: ${position.createdAt ? new Date(position.createdAt * 1000).toLocaleString() : "n/a"}</p>
               <p class="position-meta">Closed: ${position.closeAt ? new Date(position.closeAt * 1000).toLocaleString() : "n/a"}</p>
