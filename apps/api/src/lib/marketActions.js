@@ -8,6 +8,7 @@ import {
   saveMarketRecord,
 } from "./marketRegistry.js";
 import { getResolverWalletInfo } from "./runtimeEnv.js";
+import { invalidateMarketViewCache } from "./marketReadModel.js";
 import {
   createBetBody,
   createClaimBody,
@@ -15,9 +16,11 @@ import {
   DEFAULT_ACTION_VALUE_NANO,
   DIRECTION_ABOVE,
   formatPrice6,
+  getCachedMarketState,
+  getCachedUserStake,
+  invalidateContractCaches,
   isRateLimitError,
   MIN_BET_NANO,
-  openMarketContract,
   OUTCOME_NO,
   OUTCOME_YES,
   parseAddress,
@@ -215,6 +218,8 @@ export async function confirmCreate(contractAddress) {
     confirmedAt: Math.floor(Date.now() / 1000),
   });
 
+  invalidateContractCaches(record.contractAddress);
+  invalidateMarketViewCache();
   scheduleAutoResolve(record.contractAddress, 5_000);
   return record;
 }
@@ -232,12 +237,11 @@ export async function createBetIntent({
 
   const normalizedSide = normalizeSide(side);
   const amountNano = normalizeAmountTon(amountTon);
-  const market = openMarketContract(record.contractAddress);
   let preflightStatus = "checked";
 
   try {
-    const state = await market.getMarketState();
-    const stake = await market.getUserStake(parseAddress(userAddress));
+    const state = await getCachedMarketState(record.contractAddress);
+    const stake = await getCachedUserStake(record.contractAddress, userAddress);
     const nowSec = BigInt(Math.floor(Date.now() / 1000));
 
     if (state.status !== STATUS_OPEN || nowSec >= state.closeTime) {
@@ -282,9 +286,8 @@ export async function createClaimIntent({ contractAddress, userAddress }) {
     throw badRequest("Market not found", 404);
   }
 
-  const market = openMarketContract(record.contractAddress);
-  const state = await market.getMarketState();
-  const stake = await market.getUserStake(parseAddress(userAddress));
+  const state = await getCachedMarketState(record.contractAddress);
+  const stake = await getCachedUserStake(record.contractAddress, userAddress);
 
   if (state.status !== STATUS_RESOLVED_YES && state.status !== STATUS_RESOLVED_NO) {
     throw badRequest("Claim blocked: market is not resolved yet.", 409);

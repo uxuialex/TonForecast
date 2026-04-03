@@ -1,6 +1,7 @@
 export const SUPPORTED_ASSETS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
 export const MARKET_DURATIONS = [300, 900, 1800, 3600];
 export const MARKET_DIRECTIONS = ["above", "below"];
+export const PROTOCOL_FEE_BPS = 200;
 export const MARKET_STATUSES = [
   "OPEN",
   "LOCKED",
@@ -110,7 +111,25 @@ export function calculatePayout(params) {
   }
 
   const totalPool = winnerPool + loserPool;
-  return ((userStake / winnerPool) * totalPool).toFixed(6);
+  const grossPayout = (userStake / winnerPool) * totalPool;
+  const grossWinnings = Math.max(0, grossPayout - userStake);
+  const protocolFee = grossWinnings * (PROTOCOL_FEE_BPS / 10_000);
+  return (grossPayout - protocolFee).toFixed(6);
+}
+
+export function calculateProtocolFee(params) {
+  const winnerPool = Number(params.winnerPoolTon);
+  const loserPool = Number(params.loserPoolTon);
+  const userStake = Number(params.userStakeTon);
+
+  if (winnerPool <= 0 || userStake <= 0) {
+    return "0";
+  }
+
+  const totalPool = winnerPool + loserPool;
+  const grossPayout = (userStake / winnerPool) * totalPool;
+  const grossWinnings = Math.max(0, grossPayout - userStake);
+  return (grossWinnings * (PROTOCOL_FEE_BPS / 10_000)).toFixed(6);
 }
 
 export function buildMarketView(market, nowSec = Math.floor(Date.now() / 1000)) {
@@ -175,6 +194,14 @@ export function buildPositionView(position, marketView) {
   const positionStatus = derivePositionStatus(position, marketView);
   const winnerPoolTon = marketView.outcome === "YES" ? marketView.yesPool : marketView.noPool;
   const loserPoolTon = marketView.outcome === "YES" ? marketView.noPool : marketView.yesPool;
+  const feeTon =
+    positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED"
+      ? calculateProtocolFee({
+          winnerPoolTon,
+          loserPoolTon,
+          userStakeTon: position.amountTon,
+        })
+      : "0";
   const payoutTon =
     positionStatus === "CLAIMABLE" || positionStatus === "CLAIMED"
       ? calculatePayout({
@@ -204,6 +231,8 @@ export function buildPositionView(position, marketView) {
     amountLabel: `${formatTon(position.amountTon)} TON`,
     payoutTon,
     payoutLabel: payoutTon === "0" ? "0 TON" : `${formatTon(payoutTon)} TON`,
+    protocolFeeTon: feeTon,
+    protocolFeeLabel: feeTon === "0" ? "0 TON" : `${formatTon(feeTon)} TON`,
     positionStatus,
     positionStatusLabel: getPositionStatusLabel(positionStatus),
     claimable: positionStatus === "CLAIMABLE",

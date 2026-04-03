@@ -9,7 +9,8 @@ import { getAssetSnapshotMap } from "./stonApi.js";
 import {
   DIRECTION_ABOVE,
   DIRECTION_BELOW,
-  openMarketContract,
+  getCachedMarketState,
+  getCachedUserStake,
   OUTCOME_NO,
   OUTCOME_NONE,
   OUTCOME_YES,
@@ -28,6 +29,10 @@ const PRECISION_BY_ASSET = {
   MAJOR: 6,
   REDO: 6,
 };
+const MARKET_VIEW_CACHE_TTL_MS = 4_000;
+let marketViewCache = null;
+let marketViewCacheExpiresAtMs = 0;
+let marketViewInflight = null;
 
 function toFixedPrice(asset, value) {
   const precision = PRECISION_BY_ASSET[asset] ?? 6;
@@ -65,8 +70,7 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
   let onchainReady = false;
 
   try {
-    const contract = openMarketContract(record.contractAddress);
-    const state = await contract.getMarketState();
+    const state = await getCachedMarketState(record.contractAddress);
     onchainReady = true;
     threshold = Number(state.threshold) / 1_000_000;
     direction = toDirectionLabel(state.direction);
@@ -118,12 +122,31 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
 }
 
 async function buildMarkets() {
+  const nowMs = Date.now();
+  if (marketViewCache && marketViewCacheExpiresAtMs > nowMs) {
+    return marketViewCache;
+  }
+
+  if (marketViewInflight) {
+    return marketViewInflight;
+  }
+
   const snapshotMap = await getAssetSnapshotMap();
   const nowSec = Math.floor(Date.now() / 1000);
   const records = listMarketRecords();
-  return Promise.all(
+  marketViewInflight = Promise.all(
     records.map((record) => buildMarketFromRecord(record, snapshotMap, nowSec)),
-  );
+  )
+    .then((items) => {
+      marketViewCache = items;
+      marketViewCacheExpiresAtMs = Date.now() + MARKET_VIEW_CACHE_TTL_MS;
+      return items;
+    })
+    .finally(() => {
+      marketViewInflight = null;
+    });
+
+  return marketViewInflight;
 }
 
 export async function listMarkets(status) {
@@ -150,28 +173,26 @@ export async function listPositions(userAddress) {
   const records = listMarketRecords();
   const markets = await buildMarkets();
   const marketMap = new Map(markets.map((item) => [item.contractAddress, item]));
-  const positions = [];
 
-  for (const record of records) {
-    const marketView = marketMap.get(record.contractAddress);
-    if (!marketView) {
-      continue;
-    }
-
-    try {
-      const contract = openMarketContract(record.contractAddress);
-      const stake = await contract.getUserStake(userAddress);
-      const amountYesTon = nanosToTonDecimal(stake.yesAmount);
-      const amountNoTon = nanosToTonDecimal(stake.noAmount);
-      const totalAmountTon = amountYesTon + amountNoTon;
-
-      if (totalAmountTon <= 0) {
-        continue;
+  const entries = await Promise.all(
+    records.map(async (record) => {
+      const marketView = marketMap.get(record.contractAddress);
+      if (!marketView) {
+        return null;
       }
 
-      const side = amountYesTon > 0 ? "YES" : "NO";
-      positions.push(
-        buildPositionView(
+      try {
+        const stake = await getCachedUserStake(record.contractAddress, userAddress);
+        const amountYesTon = nanosToTonDecimal(stake.yesAmount);
+        const amountNoTon = nanosToTonDecimal(stake.noAmount);
+        const totalAmountTon = amountYesTon + amountNoTon;
+
+        if (totalAmountTon <= 0) {
+          return null;
+        }
+
+        const side = amountYesTon > 0 ? "YES" : "NO";
+        return buildPositionView(
           {
             id: `${record.contractAddress}:${userAddress}`,
             userAddress,
@@ -181,14 +202,21 @@ export async function listPositions(userAddress) {
             claimed: stake.claimed,
           },
           marketView,
-        ),
-      );
-    } catch (error) {
-      console.warn(
-        `[api] failed to read position for ${record.contractAddress}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
+        );
+      } catch (error) {
+        console.warn(
+          `[api] failed to read position for ${record.contractAddress}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return null;
+      }
+    }),
+  );
 
-  return positions;
+  return entries.filter(Boolean);
+}
+
+export function invalidateMarketViewCache() {
+  marketViewCache = null;
+  marketViewCacheExpiresAtMs = 0;
+  marketViewInflight = null;
 }

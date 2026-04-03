@@ -2,6 +2,7 @@ import { SUPPORTED_ASSETS, formatUsd } from "../../../../packages/shared/src/ind
 import { assetSnapshots as fallbackSnapshots } from "../data/mockMarkets.js";
 
 const STON_API_BASE = "https://api.ston.fi";
+const SNAPSHOT_CACHE_TTL_MS = 5_000;
 const PRECISION_BY_ASSET = {
   TON: 4,
   STON: 6,
@@ -10,6 +11,9 @@ const PRECISION_BY_ASSET = {
   MAJOR: 6,
   REDO: 6,
 };
+let snapshotCache = null;
+let snapshotCacheExpiresAtMs = 0;
+let snapshotInflight = null;
 
 function toSnapshotMap(items) {
   return new Map(items.map((item) => [item.asset, item]));
@@ -52,15 +56,36 @@ async function fetchLiveSnapshots() {
 }
 
 export async function getAssetSnapshots() {
-  try {
-    return await fetchLiveSnapshots();
-  } catch (error) {
-    return fallbackSnapshots.map((item) => ({
-      ...item,
-      fallback: true,
-      error: error instanceof Error ? error.message : String(error),
-    }));
+  const nowMs = Date.now();
+  if (snapshotCache && snapshotCacheExpiresAtMs > nowMs) {
+    return snapshotCache;
   }
+
+  if (snapshotInflight) {
+    return snapshotInflight;
+  }
+
+  snapshotInflight = (async () => {
+    try {
+      const snapshots = await fetchLiveSnapshots();
+      snapshotCache = snapshots;
+      snapshotCacheExpiresAtMs = Date.now() + SNAPSHOT_CACHE_TTL_MS;
+      return snapshots;
+    } catch (error) {
+      const fallback = fallbackSnapshots.map((item) => ({
+        ...item,
+        fallback: true,
+        error: error instanceof Error ? error.message : String(error),
+      }));
+      snapshotCache = fallback;
+      snapshotCacheExpiresAtMs = Date.now() + SNAPSHOT_CACHE_TTL_MS;
+      return fallback;
+    } finally {
+      snapshotInflight = null;
+    }
+  })();
+
+  return snapshotInflight;
 }
 
 export async function getAssetSnapshotMap() {

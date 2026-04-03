@@ -29,6 +29,8 @@ export const ERR_OPPOSITE_SIDE_BET = 115;
 export const ERR_UNCONTESTED = 116;
 export const ERR_BAD_ADDRESS = 117;
 export const MIN_BET = 1_000_000n;
+export const PROTOCOL_FEE_BPS = 200n;
+export const BPS_SCALE = 10_000n;
 
 export const OP_CREATE_MARKET = 0x6357b5ef;
 export const OP_BET_YES = 0x26489d83;
@@ -87,6 +89,7 @@ export type PositionSummary = {
     side: PositionSide;
     totalStake: bigint;
     winningStake: bigint;
+    protocolFee: bigint;
     payout: bigint;
     claimed: boolean;
     isResolved: boolean;
@@ -202,9 +205,14 @@ export function derivePositionSummary(
             ? market.noPool
             : 0n;
     const totalPool = market.yesPool + market.noPool;
-    const payout = winningStake > 0n && winningPool > 0n
+    const grossPayout = winningStake > 0n && winningPool > 0n
         ? (winningStake * totalPool) / winningPool
         : 0n;
+    const grossWinnings = grossPayout > winningStake
+        ? grossPayout - winningStake
+        : 0n;
+    const protocolFee = (grossWinnings * PROTOCOL_FEE_BPS) / BPS_SCALE;
+    const payout = grossPayout - protocolFee;
     const isWinner = isResolved && winningStake > 0n;
     const isClaimable = isWinner && !stake.claimed;
 
@@ -229,6 +237,7 @@ export function derivePositionSummary(
         side,
         totalStake,
         winningStake,
+        protocolFee,
         payout,
         claimed: stake.claimed,
         isResolved,

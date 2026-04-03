@@ -94,6 +94,8 @@ describe('TonForecastMarket happy path', () => {
         );
         expect(claimablePosition.positionStatus).toBe('CLAIMABLE');
         expect(claimablePosition.isClaimable).toBe(true);
+        expect(claimablePosition.protocolFee).toBe(toNano('0.1'));
+        expect(claimablePosition.payout).toBe(toNano('14.9'));
 
         const claimResult = await contract.sendClaimReward(
             yesBettor.getSender(),
@@ -108,6 +110,11 @@ describe('TonForecastMarket happy path', () => {
         expect(claimResult.transactions).toHaveTransaction({
             from: contract.address,
             to: yesBettor.address,
+            success: true,
+        });
+        expect(claimResult.transactions).toHaveTransaction({
+            from: contract.address,
+            to: resolver.address,
             success: true,
         });
 

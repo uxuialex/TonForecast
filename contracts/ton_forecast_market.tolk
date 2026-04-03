@@ -40,6 +40,8 @@ const TOKEN_UTYA = stringToBase256("UTYA") as uint64;
 const TOKEN_MAJOR = stringToBase256("MAJOR") as uint64;
 const TOKEN_REDO = stringToBase256("REDO") as uint64;
 const MIN_BET = ton("0.001");
+const PROTOCOL_FEE_BPS = 200 as uint16;
+const BPS_SCALE = 10000 as uint16;
 
 // Prices are stored as fixed-point integers with 6 decimals.
 // Example: $3.420000 is stored as 3420000.
@@ -135,6 +137,7 @@ struct (0x3b4f6c92) ClaimReward {}
 struct (0x7ef41230) RewardPaid {
     marketId: uint64;
     payout: coins;
+    protocolFee: coins;
     outcome: uint8;
 }
 
@@ -334,7 +337,12 @@ fun onInternalMessage(in: InMessage) {
             assert (winningStake > 0) throw ERR_NOT_WINNER;
             assert (winningPool > 0) throw ERR_BAD_POOL;
 
-            val payout = (winningStake * (winningPool + losingPool)) / winningPool;
+            val grossPayout = (winningStake * (winningPool + losingPool)) / winningPool;
+            val grossWinnings = grossPayout > winningStake
+                ? grossPayout - winningStake
+                : 0;
+            val protocolFee = (grossWinnings * PROTOCOL_FEE_BPS) / BPS_SCALE;
+            val payout = grossPayout - protocolFee;
 
             storage.userStakes.set(in.senderAddress, {
                 yesAmount: currentStake.yesAmount,
@@ -350,10 +358,21 @@ fun onInternalMessage(in: InMessage) {
                 body: RewardPaid {
                     marketId: meta.marketId,
                     payout,
+                    protocolFee,
                     outcome: runtime.resolvedOutcome,
                 },
             });
             payoutMsg.send(SEND_MODE_REGULAR);
+
+            if (protocolFee > 0) {
+                val feeMsg = createMessage({
+                    bounce: BounceMode.NoBounce,
+                    value: protocolFee,
+                    dest: storage.resolverAddress,
+                    body: beginCell().endCell(),
+                });
+                feeMsg.send(SEND_MODE_REGULAR);
+            }
         }
 
         else => {

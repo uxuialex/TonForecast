@@ -34,6 +34,13 @@ export const MIN_BET_NANO = toNano("0.001");
 export const DEFAULT_CREATE_VALUE_NANO = toNano("0.05");
 export const DEFAULT_ACTION_VALUE_NANO = toNano("0.05");
 const DEFAULT_RPC_MAX_RETRIES = 4;
+const MARKET_STATE_CACHE_TTL_MS = 4_000;
+const USER_STAKE_CACHE_TTL_MS = 4_000;
+const openedContracts = new Map();
+const marketStateCache = new Map();
+const marketStateInflight = new Map();
+const userStakeCache = new Map();
+const userStakeInflight = new Map();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const buildArtifactPath = path.resolve(
@@ -86,6 +93,51 @@ async function withRpcRetry(label, task) {
   }
 
   throw new Error(`[api] ${label} exceeded retry budget`);
+}
+
+function getCachedValue(cache, key) {
+  const entry = cache.get(key);
+  if (!entry) {
+    return null;
+  }
+
+  if (entry.expiresAtMs <= Date.now()) {
+    cache.delete(key);
+    return null;
+  }
+
+  return entry.value;
+}
+
+function setCachedValue(cache, key, value, ttlMs) {
+  cache.set(key, {
+    value,
+    expiresAtMs: Date.now() + ttlMs,
+  });
+  return value;
+}
+
+async function getCachedAsync(cache, inflight, key, ttlMs, task) {
+  const cached = getCachedValue(cache, key);
+  if (cached) {
+    return cached;
+  }
+
+  if (inflight.has(key)) {
+    return inflight.get(key);
+  }
+
+  const promise = (async () => {
+    try {
+      const value = await task();
+      return setCachedValue(cache, key, value, ttlMs);
+    } finally {
+      inflight.delete(key);
+    }
+  })();
+
+  inflight.set(key, promise);
+  return promise;
 }
 
 export function encodeAssetId(assetId) {
@@ -332,6 +384,59 @@ class TonForecastMarketContract {
 }
 
 export function openMarketContract(address) {
+  const normalized = parseAddress(address).toString();
+  const existing = openedContracts.get(normalized);
+  if (existing) {
+    return existing;
+  }
+
   const client = getTonClient();
-  return client.open(new TonForecastMarketContract(address));
+  const opened = client.open(new TonForecastMarketContract(normalized));
+  openedContracts.set(normalized, opened);
+  return opened;
+}
+
+export async function getCachedMarketState(address) {
+  const normalized = parseAddress(address).toString();
+  const contract = openMarketContract(normalized);
+  return getCachedAsync(
+    marketStateCache,
+    marketStateInflight,
+    normalized,
+    MARKET_STATE_CACHE_TTL_MS,
+    () => contract.getMarketState(),
+  );
+}
+
+export async function getCachedUserStake(address, userAddress) {
+  const normalizedAddress = parseAddress(address).toString();
+  const normalizedUser = parseAddress(userAddress).toString();
+  const cacheKey = `${normalizedAddress}:${normalizedUser}`;
+  const contract = openMarketContract(normalizedAddress);
+
+  return getCachedAsync(
+    userStakeCache,
+    userStakeInflight,
+    cacheKey,
+    USER_STAKE_CACHE_TTL_MS,
+    () => contract.getUserStake(normalizedUser),
+  );
+}
+
+export function invalidateContractCaches(address) {
+  const normalized = parseAddress(address).toString();
+  marketStateCache.delete(normalized);
+  marketStateInflight.delete(normalized);
+
+  for (const key of userStakeCache.keys()) {
+    if (key.startsWith(`${normalized}:`)) {
+      userStakeCache.delete(key);
+    }
+  }
+
+  for (const key of userStakeInflight.keys()) {
+    if (key.startsWith(`${normalized}:`)) {
+      userStakeInflight.delete(key);
+    }
+  }
 }
