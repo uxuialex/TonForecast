@@ -1,4 +1,5 @@
 import { readAssetIcon } from "./lib/assets.js";
+import { saveMarketRecord } from "./lib/marketRegistry.js";
 import { bootstrapAutoResolvers } from "./lib/resolverAutomation.js";
 import {
   confirmCreate,
@@ -7,14 +8,17 @@ import {
   createMarketIntent,
   getCreateContext,
 } from "./lib/marketActions.js";
-import { ensureRuntimeEnvLoaded } from "./lib/runtimeEnv.js";
+import { ensureRuntimeEnvLoaded, getAdminToken } from "./lib/runtimeEnv.js";
 import { getAssetSnapshots } from "./lib/stonApi.js";
 import {
   getMarketById,
   getPositionForUser,
+  invalidateMarketViewCache,
+  listAdminMarkets,
   listMarkets,
   listPositions,
 } from "./lib/marketReadModel.js";
+import { parseAddress } from "./lib/tonForecastMarket.js";
 
 function json(body, init = {}) {
   return new Response(JSON.stringify(body, null, 2), {
@@ -34,6 +38,18 @@ function errorResponse(error) {
     },
     { status },
   );
+}
+
+function requireAdmin(request) {
+  const configuredToken = getAdminToken();
+  if (!configuredToken) {
+    throw Object.assign(new Error("Admin token is not configured"), { statusCode: 404 });
+  }
+
+  const providedToken = request.headers.get("x-admin-token")?.trim();
+  if (!providedToken || providedToken !== configuredToken) {
+    throw Object.assign(new Error("Admin access denied"), { statusCode: 403 });
+  }
 }
 
 async function readJson(request) {
@@ -87,6 +103,37 @@ export async function handleRequest(request) {
       }
 
       return json(market);
+    }
+
+    if (url.pathname === "/api/admin/session") {
+      requireAdmin(request);
+      return json({ ok: true });
+    }
+
+    if (url.pathname === "/api/admin/markets") {
+      requireAdmin(request);
+      const status = url.searchParams.get("status") ?? undefined;
+      return json({ items: await listAdminMarkets(status) });
+    }
+
+    if (url.pathname.startsWith("/api/admin/markets/") && request.method === "POST") {
+      requireAdmin(request);
+      const contractAddress = parseAddress(
+        decodeURIComponent(url.pathname.split("/").pop() ?? ""),
+      ).toString();
+      const body = await readJson(request);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const nextRecord = saveMarketRecord({
+        contractAddress,
+        adminHiddenAt: body.hidden === true ? nowSec : null,
+        adminHiddenReason:
+          body.hidden === true ? String(body.hiddenReason ?? "").trim() : "",
+        adminLegacyFlagAt: body.legacy === true ? nowSec : null,
+        adminLegacyReason:
+          body.legacy === true ? String(body.legacyReason ?? "").trim() : "",
+      });
+      invalidateMarketViewCache();
+      return json(nextRecord);
     }
 
     if (url.pathname === "/api/positions") {

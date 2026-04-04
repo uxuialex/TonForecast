@@ -16,6 +16,9 @@ coverage
 
 *.log
 apps/api/data/runtime/*.json
+apps/api/data/runtime/*.db
+apps/api/data/runtime/*.db-shm
+apps/api/data/runtime/*.db-wal
 temp/
 pnpm-lock.yaml
 package-lock.json

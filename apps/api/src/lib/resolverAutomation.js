@@ -1,19 +1,20 @@
-import { spawn } from "node:child_process";
 import { listMarketRecords, saveMarketRecord } from "./marketRegistry.js";
+import {
+  AUTO_RESOLVE_BLOCKED_EXIT_CODE,
+  BLOCKED_PREFIX,
+  runAutoResolveJob,
+} from "./marketAutoResolver.js";
 
-const activeResolvers = new Map();
+const scheduledResolvers = new Map();
+const runningResolvers = new Set();
+const queuedResolvers = [];
 const resolverRetryCounts = new Map();
 const INITIAL_DELAY_MS = 10_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 const AUTO_RESOLVE_LOOKAHEAD_SEC = 10 * 60;
 const AUTO_RESOLVE_SWEEP_INTERVAL_MS = 60_000;
-const AUTO_RESOLVE_BLOCKED_EXIT_CODE = 42;
-const BLOCKED_PREFIX = "[resolver-blocked]";
+const MAX_PARALLEL_AUTO_RESOLVERS = 1;
 let sweepTimer = null;
-
-function getNpmCommand() {
-  return process.platform === "win32" ? "npm.cmd" : "npm";
-}
 
 function getRetryDelayMs(marketAddress) {
   const nextAttempt = (resolverRetryCounts.get(marketAddress) ?? 0) + 1;
@@ -21,88 +22,98 @@ function getRetryDelayMs(marketAddress) {
   return Math.min(MAX_RETRY_DELAY_MS, 5_000 * nextAttempt);
 }
 
-function captureBlockedReason(output, currentReason) {
-  const lines = output
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  for (const line of lines) {
-    if (line.startsWith(BLOCKED_PREFIX)) {
-      return line.slice(BLOCKED_PREFIX.length).trim() || currentReason;
-    }
-  }
-
-  return currentReason;
-}
-
-export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
-  if (!marketAddress || activeResolvers.has(marketAddress)) {
+function clearScheduledResolver(marketAddress) {
+  const scheduled = scheduledResolvers.get(marketAddress);
+  if (!scheduled) {
     return;
   }
 
-  const timer = setTimeout(() => {
-    const child = spawn(
-      getNpmCommand(),
-      ["run", "resolver:auto", "--", marketAddress],
-      {
-        cwd: process.cwd(),
-        env: {
-          ...process.env,
-          MARKET_ADDRESS: marketAddress,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
+  clearTimeout(scheduled.timer);
+  scheduledResolvers.delete(marketAddress);
+}
 
-    activeResolvers.set(marketAddress, child);
+function enqueueResolver(marketAddress) {
+  if (!marketAddress || runningResolvers.has(marketAddress) || queuedResolvers.includes(marketAddress)) {
+    return;
+  }
 
+  queuedResolvers.push(marketAddress);
+  void pumpResolverQueue();
+}
+
+async function pumpResolverQueue() {
+  while (runningResolvers.size < MAX_PARALLEL_AUTO_RESOLVERS && queuedResolvers.length) {
+    const marketAddress = queuedResolvers.shift();
+    if (!marketAddress || runningResolvers.has(marketAddress)) {
+      continue;
+    }
+
+    runningResolvers.add(marketAddress);
     const prefix = `[auto-resolver:${marketAddress}]`;
-    let blockedReason = null;
-    child.stdout.on("data", (chunk) => {
-      const message = chunk.toString().trim();
-      if (message) {
-        blockedReason = captureBlockedReason(message, blockedReason);
-        console.log(`${prefix} ${message}`);
-      }
-    });
-    child.stderr.on("data", (chunk) => {
-      const message = chunk.toString().trim();
-      if (message) {
-        blockedReason = captureBlockedReason(message, blockedReason);
-        console.error(`${prefix} ${message}`);
-      }
-    });
-    child.on("exit", (code) => {
-      activeResolvers.delete(marketAddress);
-      console.log(`${prefix} exited with code ${code ?? 0}`);
 
-      if ((code ?? 0) === AUTO_RESOLVE_BLOCKED_EXIT_CODE) {
+    void runAutoResolveJob(marketAddress)
+      .then((result) => {
+        if (result.status === "blocked") {
+          resolverRetryCounts.delete(marketAddress);
+          saveMarketRecord({
+            contractAddress: marketAddress,
+            autoResolveBlockedAt: Math.floor(Date.now() / 1000),
+            autoResolveBlockedReason:
+              String(result.reason ?? "").replace(BLOCKED_PREFIX, "").trim() ||
+              "Permanent auto-resolve failure detected",
+          });
+          console.warn(
+            `${prefix} disabled future auto-resolve attempts: ${result.reason || "permanent failure"}`,
+          );
+          return;
+        }
+
+        if (result.status === "retry") {
+          const retryDelayMs = Number(result.delayMs ?? getRetryDelayMs(marketAddress));
+          console.warn(`${prefix} retrying in ${retryDelayMs}ms: ${result.reason || "retry requested"}`);
+          scheduleAutoResolve(marketAddress, retryDelayMs);
+          return;
+        }
+
         resolverRetryCounts.delete(marketAddress);
-        saveMarketRecord({
-          contractAddress: marketAddress,
-          autoResolveBlockedAt: Math.floor(Date.now() / 1000),
-          autoResolveBlockedReason:
-            blockedReason || "Permanent auto-resolve failure detected",
-        });
-        console.warn(
-          `${prefix} disabled future auto-resolve attempts: ${blockedReason || "permanent failure"}`,
-        );
-        return;
-      }
-
-      if ((code ?? 0) !== 0) {
+        console.log(`${prefix} ${result.reason || "completed"}`);
+      })
+      .catch((error) => {
         const retryDelayMs = getRetryDelayMs(marketAddress);
-        console.warn(`${prefix} retrying in ${retryDelayMs}ms after failed run`);
+        const message = error instanceof Error ? error.message : String(error);
+        console.warn(`${prefix} retrying in ${retryDelayMs}ms after failed run: ${message}`);
         scheduleAutoResolve(marketAddress, retryDelayMs);
-        return;
-      }
+      })
+      .finally(() => {
+        runningResolvers.delete(marketAddress);
+        void pumpResolverQueue();
+      });
+  }
+}
 
-      resolverRetryCounts.delete(marketAddress);
-    });
-  }, delayMs);
+export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
+  if (!marketAddress || runningResolvers.has(marketAddress) || queuedResolvers.includes(marketAddress)) {
+    return;
+  }
 
-  activeResolvers.set(marketAddress, timer);
+  const nextDueAt = Date.now() + Math.max(1_000, delayMs);
+  const existing = scheduledResolvers.get(marketAddress);
+  if (existing && existing.dueAtMs <= nextDueAt) {
+    return;
+  }
+
+  clearScheduledResolver(marketAddress);
+
+  const timer = setTimeout(() => {
+    scheduledResolvers.delete(marketAddress);
+    enqueueResolver(marketAddress);
+  }, Math.max(1_000, delayMs));
+
+  timer.unref?.();
+  scheduledResolvers.set(marketAddress, {
+    timer,
+    dueAtMs: nextDueAt,
+  });
 }
 
 function isResolvedRecord(record) {
@@ -177,3 +188,5 @@ export function bootstrapAutoResolvers() {
 
   sweepTimer.unref?.();
 }
+
+export { AUTO_RESOLVE_BLOCKED_EXIT_CODE };

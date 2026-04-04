@@ -32,6 +32,7 @@ import {
   STATUS_RESOLVED_DRAW,
   STATUS_RESOLVED_NO,
   STATUS_RESOLVED_YES,
+  TON_FORECAST_MARKET_CONTRACT_VERSION,
   invalidateContractCaches,
   nanosToTonDecimal,
   parseAddress,
@@ -178,6 +179,18 @@ function isBrokenPendingChainRecord(record, nowSec) {
   return confirmationBaseSec + CHAIN_CONFIRM_TIMEOUT_SEC <= nowSec;
 }
 
+function isHiddenFromPublic(record) {
+  return Boolean(record?.adminHiddenAt);
+}
+
+function isLegacyRecord(record) {
+  return Boolean(
+    record?.adminLegacyFlagAt ||
+      !record?.contractVersion ||
+      record.contractVersion !== TON_FORECAST_MARKET_CONTRACT_VERSION,
+  );
+}
+
 async function buildMarketFromRecord(record, snapshotMap, nowSec, options = {}) {
   const recordPatches = options.recordPatches ?? null;
   if (isBrokenPendingChainRecord(record, nowSec)) {
@@ -289,6 +302,14 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec, options = {}) 
       contractVersion: record.contractVersion ?? null,
       contractCodeHash: record.contractCodeHash ?? null,
       contractCodeHashBase64: record.contractCodeHashBase64 ?? null,
+      isLegacyMarket: isLegacyRecord(record),
+      adminHiddenAt: record.adminHiddenAt ?? null,
+      adminHiddenReason: record.adminHiddenReason ?? "",
+      adminLegacyFlagAt: record.adminLegacyFlagAt ?? null,
+      adminLegacyReason: record.adminLegacyReason ?? "",
+      autoResolveBlockedAt: record.autoResolveBlockedAt ?? null,
+      autoResolveBlockedReason: record.autoResolveBlockedReason ?? "",
+      createFailedAt: record.createFailedAt ?? null,
       onchainReady,
       iconUrl,
     },
@@ -296,9 +317,11 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec, options = {}) 
   );
 }
 
-function getCandidateRecords(records, status, nowSec) {
+function getCandidateRecords(records, status, nowSec, options = {}) {
+  const includeHidden = options.includeHidden === true;
   const validRecords = records
     .filter((record) => !record.createFailedAt)
+    .filter((record) => includeHidden || !isHiddenFromPublic(record))
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
 
   if (status === "OPEN") {
@@ -495,8 +518,9 @@ function normalizeUserAddress(userAddress) {
   return parseAddress(userAddress).toString();
 }
 
-async function buildMarkets(status = "") {
-  const cacheKey = status || "ALL";
+async function buildMarkets(status = "", options = {}) {
+  const includeHidden = options.includeHidden === true;
+  const cacheKey = `${status || "ALL"}:${includeHidden ? "admin" : "public"}`;
   const cached = getCachedMarketViews(cacheKey);
   if (cached) {
     return cached;
@@ -508,7 +532,7 @@ async function buildMarkets(status = "") {
 
   const nowSec = Math.floor(Date.now() / 1000);
   const snapshotMap = await getAssetSnapshotMap();
-  const records = getCandidateRecords(listMarketRecords(), status, nowSec);
+  const records = getCandidateRecords(listMarketRecords(), status, nowSec, { includeHidden });
   const recordPatches = new Map();
   const inflight = mapConcurrent(
     records,
@@ -566,11 +590,24 @@ export async function listMarkets(status) {
   return items.filter((item) => item.effectiveStatus === status);
 }
 
-export async function getMarketById(marketId) {
-  const market = (await buildMarkets()).find(
+export async function getMarketById(marketId, options = {}) {
+  const market = (await buildMarkets("", options)).find(
     (item) => item.id === marketId || item.contractAddress === marketId || item.marketId === marketId,
   );
   return market ?? null;
+}
+
+export async function listAdminMarkets(status) {
+  const items = await buildMarkets(status, { includeHidden: true });
+  return items.map((item) => ({
+    ...item,
+    isProblemMarket: Boolean(
+      item.isLegacyMarket ||
+        item.adminHiddenAt ||
+        item.autoResolveBlockedAt ||
+        item.createFailedAt,
+    ),
+  }));
 }
 
 function getPositionCandidateRecords(userAddress, { full = false } = {}) {

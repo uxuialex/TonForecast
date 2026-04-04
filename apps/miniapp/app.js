@@ -81,8 +81,15 @@ const walletAddressEl = document.querySelector("#wallet-address");
 const marketGridEl = document.querySelector("#market-grid");
 const marketFeedbackEl = document.querySelector("#markets-feedback");
 const positionsFeedbackEl = document.querySelector("#positions-feedback");
+const positionsSyncMetaEl = document.querySelector("#positions-sync-meta");
 const positionsListEl = document.querySelector("#positions-list");
 const positionsRefreshButtonEl = document.querySelector("#positions-refresh-button");
+const userMarketsFeedbackEl = document.querySelector("#user-markets-feedback");
+const userMarketsListEl = document.querySelector("#user-markets-list");
+const adminFeedbackEl = document.querySelector("#admin-feedback");
+const adminListEl = document.querySelector("#admin-list");
+const adminAccessButtonEl = document.querySelector("#admin-access-button");
+const adminRefreshButtonEl = document.querySelector("#admin-refresh-button");
 const marketFilterEl = document.querySelector("#market-filter");
 const marketFilterTriggerEl = document.querySelector("#market-filter-trigger");
 const marketFilterLabelEl = document.querySelector("#market-filter-label");
@@ -99,6 +106,27 @@ const runtimeModeEl = document.querySelector("#runtime-mode");
 
 const manifestUrl = `${window.location.origin}/tonconnect-manifest.json`;
 const TWA_RETURN_URL = "https://t.me/chatchatgpt_bot/TON_Forecast";
+const ADMIN_TOKEN_STORAGE_KEY = "tonforecast_admin_token";
+
+function readAdminToken() {
+  try {
+    return window.sessionStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function persistAdminToken(token) {
+  try {
+    if (token) {
+      window.sessionStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
+      return;
+    }
+    window.sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  } catch {
+    // Ignore storage failures in restrictive webviews.
+  }
+}
 
 const state = {
   activePanel: "markets",
@@ -108,7 +136,11 @@ const state = {
   isTelegram,
   markets: [],
   positions: [],
+  userMarkets: [],
   prices: [],
+  adminToken: readAdminToken(),
+  adminMarkets: [],
+  adminLoading: false,
   createContext: {
     asset: assetEl.value,
     durationSec: Number(durationEl.value),
@@ -549,6 +581,106 @@ function getExplorerUrl(address) {
   return `https://tonviewer.com/${encodeURIComponent(address)}`;
 }
 
+function setPositionsSyncMeta(message) {
+  if (!positionsSyncMetaEl) {
+    return;
+  }
+
+  positionsSyncMetaEl.textContent = message;
+}
+
+function buildMarketFlagsHtml(market) {
+  const flags = [];
+  if (market.isLegacyMarket) {
+    flags.push('<span class="market-flag market-flag--legacy">Legacy</span>');
+  }
+  if (market.adminHiddenAt) {
+    flags.push('<span class="market-flag market-flag--hidden">Hidden</span>');
+  }
+  if (market.autoResolveBlockedAt || market.createFailedAt) {
+    flags.push('<span class="market-flag market-flag--blocked">Problem</span>');
+  }
+  return flags.join("");
+}
+
+function buildUserMarketsFromPositions(items) {
+  const byAddress = new Map();
+
+  for (const position of items) {
+    if (!position?.contractAddress) {
+      continue;
+    }
+
+    const existing = byAddress.get(position.contractAddress);
+    if (!existing) {
+      byAddress.set(position.contractAddress, {
+        ...position,
+        positionCount: 1,
+        claimableCount: position.claimable ? 1 : 0,
+      });
+      continue;
+    }
+
+    existing.positionCount += 1;
+    if (position.claimable) {
+      existing.claimableCount += 1;
+    }
+  }
+
+  return [...byAddress.values()].sort(
+    (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
+  );
+}
+
+function renderUserMarkets(items) {
+  state.userMarkets = items;
+
+  if (!state.wallet) {
+    userMarketsFeedbackEl.textContent = "Connect a wallet to see your markets.";
+    userMarketsListEl.innerHTML =
+      '<div class="position-empty">Wallet disconnected. Market activity is idle.</div>';
+    return;
+  }
+
+  if (!items.length) {
+    userMarketsFeedbackEl.textContent = "No tracked markets yet.";
+    userMarketsListEl.innerHTML =
+      '<div class="position-empty">Markets tied to your positions will appear here.</div>';
+    return;
+  }
+
+  userMarketsFeedbackEl.textContent = `${items.length} tracked market${items.length === 1 ? "" : "s"}`;
+  userMarketsListEl.innerHTML = items
+    .map((market) => `
+      <article class="position-row user-market-row" data-market-id="${market.marketId}">
+        <div>
+          <div class="position-header">
+            <p class="position-title">${market.question}</p>
+            <a
+              class="market-link position-link"
+              href="${getExplorerUrl(market.contractAddress)}"
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label="Open market on explorer"
+              title="Open on explorer"
+            >↗</a>
+          </div>
+          <div class="position-row__meta">
+            ${buildMarketFlagsHtml(market)}
+          </div>
+          <div class="user-market-summary">
+            <span>State: ${market.marketStatusLabel}</span>
+            <span>Positions: ${market.positionCount}</span>
+            ${market.claimableCount ? `<span>Claimable: ${market.claimableCount}</span>` : ""}
+            <span>Close: ${formatMarketDateTime(market.closeAt)}</span>
+            <span>Resolve: ${formatMarketDateTime(market.resolveAt)}</span>
+          </div>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
 function getMarketActionHint(market, effectiveStatus) {
   const pendingBet = state.pendingBet?.contractAddress === market.contractAddress;
   if (pendingBet) {
@@ -586,9 +718,12 @@ function syncWalletState(wallet) {
       "Connect a TON wallet to create markets, place bets, and claim payouts.";
     positionsFeedbackEl.textContent = "Connect a wallet to load positions.";
     positionsFeedbackEl.classList.remove("is-loading");
+    setPositionsSyncMeta("Connect a wallet to start syncing.");
     positionsListEl.innerHTML =
       '<div class="position-empty">Wallet disconnected. Position feed is idle.</div>';
+    renderUserMarkets([]);
     syncPositionsRefreshButton();
+    syncAdminControls();
     renderMarkets(state.markets);
     renderPositions(state.positions);
     setCreateNotice("Connect a wallet to unlock create, bet, and claim actions.", "info");
@@ -598,6 +733,7 @@ function syncWalletState(wallet) {
 
   walletStatusEl.textContent = "Wallet connected";
   walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
+  setPositionsSyncMeta("Wallet connected. Profile snapshot will sync when opened.");
   clearActionFeedback();
   if (state.createNotice?.message?.startsWith("Connect a wallet")) {
     setCreateNotice(null);
@@ -610,6 +746,7 @@ function syncWalletState(wallet) {
   }
   renderMarkets(state.markets);
   syncPositionsRefreshButton();
+  syncAdminControls();
   syncCreateButtonState();
 }
 
@@ -624,6 +761,177 @@ async function requestJson(url, options = {}) {
     throw new Error(payload.error || `HTTP ${response.status}`);
   }
   return payload;
+}
+
+async function requestAdminJson(url, options = {}) {
+  if (!state.adminToken) {
+    throw new Error("Admin token is missing");
+  }
+
+  const headers = new Headers(options.headers ?? {});
+  headers.set("x-admin-token", state.adminToken);
+  return requestJson(url, {
+    ...options,
+    headers,
+  });
+}
+
+function syncAdminControls() {
+  const hasToken = Boolean(state.adminToken);
+  if (adminFeedbackEl) {
+    adminFeedbackEl.textContent = hasToken
+      ? state.adminLoading
+        ? "Admin mode enabled. Loading flagged markets..."
+        : `Admin mode enabled. ${state.adminMarkets.length} market${state.adminMarkets.length === 1 ? "" : "s"} loaded.`
+      : "Admin mode is off.";
+  }
+
+  if (adminAccessButtonEl) {
+    adminAccessButtonEl.textContent = hasToken ? "Clear Access" : "Admin Access";
+  }
+
+  if (adminRefreshButtonEl) {
+    adminRefreshButtonEl.disabled = !hasToken || state.adminLoading;
+    adminRefreshButtonEl.classList.toggle("is-busy", state.adminLoading);
+    adminRefreshButtonEl.textContent = state.adminLoading ? "Loading..." : "Reload";
+  }
+}
+
+function renderAdminMarkets(items) {
+  if (!adminListEl) {
+    return;
+  }
+
+  if (!state.adminToken) {
+    adminListEl.innerHTML = "";
+    syncAdminControls();
+    return;
+  }
+
+  if (!items.length) {
+    adminListEl.innerHTML =
+      '<div class="position-empty">No admin-tracked markets yet. Hidden, legacy or broken markets will appear here.</div>';
+    syncAdminControls();
+    return;
+  }
+
+  adminListEl.innerHTML = items
+    .map((market) => `
+      <article class="position-row admin-market-row" data-admin-market-address="${market.contractAddress}">
+        <div>
+          <div class="position-header">
+            <p class="position-title">${market.question}</p>
+            <a
+              class="market-link position-link"
+              href="${getExplorerUrl(market.contractAddress)}"
+              target="_blank"
+              rel="noreferrer noopener"
+              aria-label="Open market on explorer"
+              title="Open on explorer"
+            >↗</a>
+          </div>
+          <div class="position-row__meta">
+            ${buildMarketFlagsHtml(market)}
+          </div>
+          <div class="admin-market-summary">
+            <span>Status: ${market.statusLabel}</span>
+            <span>Contract: ${shortAddress(market.contractAddress)}</span>
+            ${market.adminHiddenReason ? `<span>Hide note: ${market.adminHiddenReason}</span>` : ""}
+            ${market.adminLegacyReason ? `<span>Legacy note: ${market.adminLegacyReason}</span>` : ""}
+            ${market.autoResolveBlockedReason ? `<span>Resolver: ${market.autoResolveBlockedReason}</span>` : ""}
+          </div>
+        </div>
+        <div class="admin-market-actions">
+          <button class="ghost-button" type="button" data-admin-action="legacy" data-enabled="${market.adminLegacyFlagAt ? "1" : "0"}">
+            ${market.adminLegacyFlagAt ? "Unflag Legacy" : "Flag Legacy"}
+          </button>
+          <button class="ghost-button" type="button" data-admin-action="hide" data-enabled="${market.adminHiddenAt ? "1" : "0"}">
+            ${market.adminHiddenAt ? "Unhide" : "Hide"}
+          </button>
+        </div>
+      </article>
+    `)
+    .join("");
+
+  syncAdminControls();
+}
+
+async function loadAdminMarkets() {
+  if (!state.adminToken) {
+    state.adminMarkets = [];
+    renderAdminMarkets(state.adminMarkets);
+    return;
+  }
+
+  state.adminLoading = true;
+  syncAdminControls();
+  try {
+    const payload = await requestAdminJson("/api/admin/markets");
+    state.adminMarkets = (payload.items ?? []).filter(
+      (item) => item.isProblemMarket || item.adminHiddenAt || item.adminLegacyFlagAt,
+    );
+    renderAdminMarkets(state.adminMarkets);
+  } catch (error) {
+    state.adminMarkets = [];
+    if (adminFeedbackEl) {
+      adminFeedbackEl.textContent = `Admin load failed: ${normalizeActionError(error.message)}`;
+    }
+    renderAdminMarkets(state.adminMarkets);
+    throw error;
+  } finally {
+    state.adminLoading = false;
+    syncAdminControls();
+  }
+}
+
+async function updateAdminMarketFlag(contractAddress, patch) {
+  const payload = await requestAdminJson(`/api/admin/markets/${encodeURIComponent(contractAddress)}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+
+  await Promise.all([
+    loadMarkets(state.activeMarketStatus),
+    state.wallet ? loadPositions({ fresh: true, full: true, silent: true }) : Promise.resolve(),
+    loadAdminMarkets(),
+  ]);
+
+  return payload;
+}
+
+async function handleAdminAccess() {
+  if (state.adminToken) {
+    persistAdminToken("");
+    state.adminToken = "";
+    state.adminMarkets = [];
+    renderAdminMarkets(state.adminMarkets);
+    syncAdminControls();
+    return;
+  }
+
+  const nextToken = window.prompt("Enter admin token");
+  if (!nextToken) {
+    return;
+  }
+
+  const trimmed = nextToken.trim();
+  if (!trimmed) {
+    return;
+  }
+
+  const previousToken = state.adminToken;
+  try {
+    state.adminToken = trimmed;
+    await requestAdminJson("/api/admin/session");
+    persistAdminToken(trimmed);
+    await loadAdminMarkets();
+  } catch (error) {
+    state.adminToken = previousToken;
+    persistAdminToken(previousToken);
+    window.alert(normalizeActionError(error.message));
+    syncAdminControls();
+  }
 }
 
 function renderPrices(items) {
@@ -834,6 +1142,9 @@ function renderMarkets(items) {
               >↗</a>
             </div>
           </div>
+          <div class="position-row__meta">
+            ${buildMarketFlagsHtml(market)}
+          </div>
           <h3>${market.question}</h3>
           <dl class="market-stats">
             <div><dt>Current</dt><dd>${market.currentPriceLabel}</dd></div>
@@ -893,6 +1204,7 @@ async function loadMarkets(status = "") {
 
 function renderPositions(items) {
   if (!state.wallet) {
+    renderUserMarkets([]);
     return;
   }
 
@@ -904,6 +1216,7 @@ function renderPositions(items) {
   if (!items.length) {
     positionsListEl.innerHTML =
       '<div class="position-empty">No positions yet. Create a market or place a bet to start the demo flow.</div>';
+    renderUserMarkets([]);
     return;
   }
 
@@ -922,6 +1235,9 @@ function renderPositions(items) {
                 aria-label="Open position market on explorer"
                 title="Open on explorer"
               >↗</a>
+            </div>
+            <div class="position-row__meta">
+              ${buildMarketFlagsHtml(position)}
             </div>
             <div class="position-facts">
               <p class="position-meta">Your bet: ${position.betLabel}</p>
@@ -961,6 +1277,8 @@ function renderPositions(items) {
       `,
     )
     .join("");
+
+  renderUserMarkets(buildUserMarketsFromPositions(items));
 }
 
 function syncPositionsRefreshButton() {
@@ -987,6 +1305,13 @@ async function loadPositions(options = {}) {
   syncPositionsRefreshButton();
   const suppressLoadingUi = options.cachedOnly === true;
   const isSilent = options.silent === true && state.positions.length > 0;
+  if (options.cachedOnly) {
+    setPositionsSyncMeta("Loading cached snapshot...");
+  } else if (options.full) {
+    setPositionsSyncMeta("Running full sync across your markets...");
+  } else {
+    setPositionsSyncMeta("Refreshing indexed positions...");
+  }
   if (!isSilent && !suppressLoadingUi) {
     positionsFeedbackEl.textContent =
       options.full && !state.positions.length
@@ -1011,6 +1336,11 @@ async function loadPositions(options = {}) {
     state.positionsLoaded = true;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
+    setPositionsSyncMeta(
+      options.cachedOnly && state.positions.length
+        ? "Showing cached snapshot. Full sync will continue in background."
+        : "Synced just now.",
+    );
     if (!isSilent && (!options.cachedOnly || state.positions.length > 0)) {
       positionsFeedbackEl.classList.remove("is-loading");
       positionsFeedbackEl.textContent = state.positions.length
@@ -1026,6 +1356,11 @@ async function loadPositions(options = {}) {
     state.positionsLoaded = state.positions.length > 0;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
+    setPositionsSyncMeta(
+      state.positions.length
+        ? "Showing last known state. Latest refresh failed."
+        : "Failed to sync positions.",
+    );
     if (!isSilent && (!options.cachedOnly || state.positions.length > 0)) {
       positionsFeedbackEl.classList.remove("is-loading");
       positionsFeedbackEl.textContent = state.positions.length
@@ -1667,6 +2002,50 @@ positionsRefreshButtonEl?.addEventListener("click", () => {
   loadPositions({ fresh: true, full: true });
 });
 
+adminAccessButtonEl?.addEventListener("click", () => {
+  handleAdminAccess();
+});
+
+adminRefreshButtonEl?.addEventListener("click", () => {
+  loadAdminMarkets().catch((error) => {
+    console.warn("loadAdminMarkets failed", error);
+  });
+});
+
+adminListEl?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-admin-action]");
+  if (!button) {
+    return;
+  }
+
+  const row = button.closest("[data-admin-market-address]");
+  if (!row) {
+    return;
+  }
+
+  const enabled = button.dataset.enabled === "1";
+  const action = button.dataset.adminAction;
+  const contractAddress = row.dataset.adminMarketAddress;
+  if (!contractAddress) {
+    return;
+  }
+
+  let patch;
+  if (action === "legacy") {
+    const legacyReason = enabled ? "" : window.prompt("Legacy note (optional)") ?? "";
+    patch = { legacy: !enabled, legacyReason };
+  } else if (action === "hide") {
+    const hiddenReason = enabled ? "" : window.prompt("Hide reason (optional)") ?? "";
+    patch = { hidden: !enabled, hiddenReason };
+  } else {
+    return;
+  }
+
+  updateAdminMarketFlag(contractAddress, patch).catch((error) => {
+    window.alert(normalizeActionError(error.message));
+  });
+});
+
 if (window.TON_CONNECT_UI?.TonConnectUI) {
   try {
     const tonConnectUI = new window.TON_CONNECT_UI.TonConnectUI({
@@ -1720,3 +2099,10 @@ loadPrices();
 loadMarkets(state.activeMarketStatus);
 clearActionFeedback();
 syncPositionsRefreshButton();
+syncAdminControls();
+renderAdminMarkets(state.adminMarkets);
+if (state.adminToken) {
+  loadAdminMarkets().catch((error) => {
+    console.warn("initial admin load failed", error);
+  });
+}

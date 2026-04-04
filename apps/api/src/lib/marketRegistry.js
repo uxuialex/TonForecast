@@ -1,47 +1,226 @@
 import fs from "node:fs";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 const runtimeDir = path.resolve(process.cwd(), "apps/api/data/runtime");
-const runtimeFile = path.join(runtimeDir, "markets.json");
+const legacyRuntimeFile = path.join(runtimeDir, "markets.json");
+const runtimeDbFile = path.join(runtimeDir, "markets.db");
 const pendingCreates = new Map();
 const PENDING_TTL_MS = 2 * 60 * 1000;
 
+let db = null;
+
 function createEmptyStore() {
-  return { version: 3, markets: [], userMarketIndex: {}, userPositionSnapshots: {} };
+  return { version: 4, markets: [], userMarketIndex: {}, userPositionSnapshots: {} };
 }
 
-function ensureStore() {
+function ensureRuntimeDir() {
   fs.mkdirSync(runtimeDir, { recursive: true });
-  if (!fs.existsSync(runtimeFile)) {
-    fs.writeFileSync(runtimeFile, JSON.stringify(createEmptyStore(), null, 2));
+}
+
+function readLegacyStore() {
+  if (!fs.existsSync(legacyRuntimeFile)) {
+    return createEmptyStore();
   }
-}
 
-function readStore() {
-  ensureStore();
-  const parsed = JSON.parse(fs.readFileSync(runtimeFile, "utf8"));
-  return {
-    ...createEmptyStore(),
-    ...parsed,
-    markets: Array.isArray(parsed.markets) ? parsed.markets : [],
-    userMarketIndex:
-      parsed.userMarketIndex && typeof parsed.userMarketIndex === "object"
-        ? parsed.userMarketIndex
-        : {},
-    userPositionSnapshots:
-      parsed.userPositionSnapshots && typeof parsed.userPositionSnapshots === "object"
-        ? parsed.userPositionSnapshots
-        : {},
-  };
-}
-
-function writeStore(store) {
-  ensureStore();
-  fs.writeFileSync(runtimeFile, JSON.stringify(store, null, 2));
+  try {
+    const parsed = JSON.parse(fs.readFileSync(legacyRuntimeFile, "utf8"));
+    return {
+      ...createEmptyStore(),
+      ...parsed,
+      markets: Array.isArray(parsed.markets) ? parsed.markets : [],
+      userMarketIndex:
+        parsed.userMarketIndex && typeof parsed.userMarketIndex === "object"
+          ? parsed.userMarketIndex
+          : {},
+      userPositionSnapshots:
+        parsed.userPositionSnapshots && typeof parsed.userPositionSnapshots === "object"
+          ? parsed.userPositionSnapshots
+          : {},
+    };
+  } catch (error) {
+    console.warn(
+      `[api] failed to read legacy runtime store: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return createEmptyStore();
+  }
 }
 
 function uniqueNonEmpty(values) {
   return [...new Set((values ?? []).filter(Boolean))];
+}
+
+function getDb() {
+  if (db) {
+    return db;
+  }
+
+  ensureRuntimeDir();
+  db = new DatabaseSync(runtimeDbFile);
+  db.exec(`
+    PRAGMA journal_mode = WAL;
+    PRAGMA synchronous = NORMAL;
+
+    CREATE TABLE IF NOT EXISTS meta (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS markets (
+      contract_address TEXT PRIMARY KEY,
+      created_at INTEGER NOT NULL DEFAULT 0,
+      payload TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_markets_created_at
+      ON markets(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS user_market_index (
+      user_address TEXT NOT NULL,
+      contract_address TEXT NOT NULL,
+      PRIMARY KEY (user_address, contract_address)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_user_market_index_user
+      ON user_market_index(user_address);
+
+    CREATE TABLE IF NOT EXISTS user_position_snapshots (
+      user_address TEXT PRIMARY KEY,
+      synced_at INTEGER NOT NULL DEFAULT 0,
+      items_json TEXT NOT NULL
+    );
+  `);
+
+  migrateLegacyStore(db);
+  return db;
+}
+
+function withTransaction(task) {
+  const database = getDb();
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    const result = task(database);
+    database.exec("COMMIT");
+    return result;
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+function migrateLegacyStore(database) {
+  const migrated = database
+    .prepare(`SELECT value FROM meta WHERE key = 'runtime_store_version'`)
+    .get();
+  if (migrated?.value) {
+    return;
+  }
+
+  const existingCount = database.prepare("SELECT COUNT(*) AS count FROM markets").get().count;
+  const legacyStore = readLegacyStore();
+
+  withTransaction((tx) => {
+    if (existingCount === 0) {
+      const upsertMarket = tx.prepare(`
+        INSERT INTO markets (contract_address, created_at, payload)
+        VALUES (?, ?, ?)
+        ON CONFLICT(contract_address) DO UPDATE SET
+          created_at = excluded.created_at,
+          payload = excluded.payload
+      `);
+
+      for (const record of legacyStore.markets ?? []) {
+        if (!record?.contractAddress) {
+          continue;
+        }
+        upsertMarket.run(
+          record.contractAddress,
+          Number(record.createdAt ?? 0),
+          JSON.stringify(record),
+        );
+      }
+
+      const insertUserMarketIndex = tx.prepare(`
+        INSERT OR IGNORE INTO user_market_index (user_address, contract_address)
+        VALUES (?, ?)
+      `);
+
+      for (const [userAddress, contractAddresses] of Object.entries(legacyStore.userMarketIndex ?? {})) {
+        for (const contractAddress of uniqueNonEmpty(contractAddresses)) {
+          insertUserMarketIndex.run(userAddress, contractAddress);
+        }
+      }
+
+      const upsertSnapshot = tx.prepare(`
+        INSERT INTO user_position_snapshots (user_address, synced_at, items_json)
+        VALUES (?, ?, ?)
+        ON CONFLICT(user_address) DO UPDATE SET
+          synced_at = excluded.synced_at,
+          items_json = excluded.items_json
+      `);
+
+      for (const [userAddress, entry] of Object.entries(legacyStore.userPositionSnapshots ?? {})) {
+        const normalizedEntry = Array.isArray(entry)
+          ? { items: entry, syncedAt: 0 }
+          : entry && typeof entry === "object"
+            ? entry
+            : { items: [], syncedAt: 0 };
+
+        upsertSnapshot.run(
+          userAddress,
+          Number(normalizedEntry.syncedAt ?? 0),
+          JSON.stringify(Array.isArray(normalizedEntry.items) ? normalizedEntry.items : []),
+        );
+      }
+    }
+
+    tx.prepare(`
+      INSERT INTO meta (key, value)
+      VALUES ('runtime_store_version', ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(String(createEmptyStore().version));
+  });
+}
+
+function rowToMarketRecord(row) {
+  if (!row?.payload) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(row.payload);
+    return {
+      ...parsed,
+      contractAddress: parsed.contractAddress ?? row.contract_address,
+      createdAt: Number(parsed.createdAt ?? row.created_at ?? 0),
+    };
+  } catch (error) {
+    console.warn(
+      `[api] failed to parse market record ${row.contract_address}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
+}
+
+function getStoredMarketRecord(contractAddress) {
+  const row = getDb()
+    .prepare("SELECT contract_address, created_at, payload FROM markets WHERE contract_address = ?")
+    .get(contractAddress);
+  return rowToMarketRecord(row);
+}
+
+function upsertMarketRecord(database, record) {
+  database.prepare(`
+    INSERT INTO markets (contract_address, created_at, payload)
+    VALUES (?, ?, ?)
+    ON CONFLICT(contract_address) DO UPDATE SET
+      created_at = excluded.created_at,
+      payload = excluded.payload
+  `).run(
+    record.contractAddress,
+    Number(record.createdAt ?? 0),
+    JSON.stringify(record),
+  );
 }
 
 function cleanupPendingCreates() {
@@ -54,33 +233,39 @@ function cleanupPendingCreates() {
 }
 
 export function listMarketRecords() {
-  return readStore().markets ?? [];
+  const rows = getDb().prepare(`
+    SELECT contract_address, created_at, payload
+    FROM markets
+    ORDER BY created_at DESC, contract_address DESC
+  `).all();
+
+  return rows.map((row) => rowToMarketRecord(row)).filter(Boolean);
 }
 
 export function getMarketRecord(contractAddress) {
-  return listMarketRecords().find((item) => item.contractAddress === contractAddress) ?? null;
+  return getStoredMarketRecord(contractAddress) ?? null;
 }
 
 export function saveMarketRecord(record) {
-  const store = readStore();
-  const items = store.markets ?? [];
-  const existingIndex = items.findIndex((item) => item.contractAddress === record.contractAddress);
-
-  if (existingIndex >= 0) {
-    items[existingIndex] = {
-      ...items[existingIndex],
-      ...record,
-    };
-  } else {
-    items.unshift(record);
+  if (!record?.contractAddress) {
+    return null;
   }
 
-  writeStore({
-    ...store,
-    markets: items,
+  const existing = getStoredMarketRecord(record.contractAddress);
+  const nextRecord = existing
+    ? {
+        ...existing,
+        ...record,
+      }
+    : {
+        ...record,
+      };
+
+  withTransaction((tx) => {
+    upsertMarketRecord(tx, nextRecord);
   });
 
-  return record;
+  return nextRecord;
 }
 
 export function saveMarketRecords(records) {
@@ -92,39 +277,30 @@ export function saveMarketRecords(records) {
     return [];
   }
 
-  const store = readStore();
-  const items = [...(store.markets ?? [])];
-  const newItems = [];
+  const mergedRecords = [];
+  withTransaction((tx) => {
+    for (const record of normalizedRecords) {
+      const existingRow = tx.prepare(`
+        SELECT contract_address, created_at, payload
+        FROM markets
+        WHERE contract_address = ?
+      `).get(record.contractAddress);
+      const existingRecord = rowToMarketRecord(existingRow);
+      const nextRecord = existingRecord
+        ? {
+            ...existingRecord,
+            ...record,
+          }
+        : {
+            ...record,
+          };
 
-  for (const record of normalizedRecords) {
-    const existingIndex = items.findIndex((item) => item.contractAddress === record.contractAddress);
-
-    if (existingIndex >= 0) {
-      items[existingIndex] = {
-        ...items[existingIndex],
-        ...record,
-      };
-      continue;
+      upsertMarketRecord(tx, nextRecord);
+      mergedRecords.push(nextRecord);
     }
-
-    const pendingIndex = newItems.findIndex((item) => item.contractAddress === record.contractAddress);
-    if (pendingIndex >= 0) {
-      newItems[pendingIndex] = {
-        ...newItems[pendingIndex],
-        ...record,
-      };
-      continue;
-    }
-
-    newItems.unshift(record);
-  }
-
-  writeStore({
-    ...store,
-    markets: [...newItems, ...items],
   });
 
-  return normalizedRecords;
+  return mergedRecords;
 }
 
 export function rememberUserMarket(contractAddress, userAddress) {
@@ -132,38 +308,28 @@ export function rememberUserMarket(contractAddress, userAddress) {
     return null;
   }
 
-  const store = readStore();
-  const items = store.markets ?? [];
-  const existingIndex = items.findIndex((item) => item.contractAddress === contractAddress);
-  if (existingIndex < 0) {
+  const existingRecord = getStoredMarketRecord(contractAddress);
+  if (!existingRecord) {
     return null;
   }
 
-  const existingRecord = items[existingIndex];
-  const nextParticipantAddresses = uniqueNonEmpty([
-    ...(Array.isArray(existingRecord.participantAddresses) ? existingRecord.participantAddresses : []),
-    userAddress,
-  ]);
-  const nextUserContracts = uniqueNonEmpty([
-    contractAddress,
-    ...(((store.userMarketIndex ?? {})[userAddress]) ?? []),
-  ]);
-
-  items[existingIndex] = {
+  const nextRecord = {
     ...existingRecord,
-    participantAddresses: nextParticipantAddresses,
+    participantAddresses: uniqueNonEmpty([
+      ...(Array.isArray(existingRecord.participantAddresses) ? existingRecord.participantAddresses : []),
+      userAddress,
+    ]),
   };
 
-  writeStore({
-    ...store,
-    markets: items,
-    userMarketIndex: {
-      ...(store.userMarketIndex ?? {}),
-      [userAddress]: nextUserContracts,
-    },
+  withTransaction((tx) => {
+    upsertMarketRecord(tx, nextRecord);
+    tx.prepare(`
+      INSERT OR IGNORE INTO user_market_index (user_address, contract_address)
+      VALUES (?, ?)
+    `).run(userAddress, contractAddress);
   });
 
-  return items[existingIndex];
+  return nextRecord;
 }
 
 export function getIndexedMarketRecordsForUser(userAddress) {
@@ -171,25 +337,30 @@ export function getIndexedMarketRecordsForUser(userAddress) {
     return [];
   }
 
-  const store = readStore();
-  const items = store.markets ?? [];
   const byAddress = new Map();
-  const indexedContracts = ((store.userMarketIndex ?? {})[userAddress]) ?? [];
+  const database = getDb();
+  const indexedRows = database.prepare(`
+    SELECT contract_address
+    FROM user_market_index
+    WHERE user_address = ?
+  `).all(userAddress);
 
-  for (const contractAddress of indexedContracts) {
-    const record = items.find((item) => item.contractAddress === contractAddress);
+  for (const row of indexedRows) {
+    const record = getStoredMarketRecord(row.contract_address);
     if (record) {
       byAddress.set(record.contractAddress, record);
     }
   }
 
-  for (const record of items) {
+  for (const record of listMarketRecords()) {
     if (Array.isArray(record.participantAddresses) && record.participantAddresses.includes(userAddress)) {
       byAddress.set(record.contractAddress, record);
     }
   }
 
-  return [...byAddress.values()];
+  return [...byAddress.values()].sort(
+    (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
+  );
 }
 
 export function getUserPositionSnapshot(userAddress) {
@@ -197,23 +368,28 @@ export function getUserPositionSnapshot(userAddress) {
     return null;
   }
 
-  const store = readStore();
-  const entry = (store.userPositionSnapshots ?? {})[userAddress];
+  const row = getDb().prepare(`
+    SELECT synced_at, items_json
+    FROM user_position_snapshots
+    WHERE user_address = ?
+  `).get(userAddress);
 
-  if (Array.isArray(entry)) {
-    return {
-      items: entry,
-      syncedAt: 0,
-    };
-  }
-
-  if (!entry || typeof entry !== "object") {
+  if (!row) {
     return null;
   }
 
+  let items = [];
+  try {
+    items = JSON.parse(row.items_json ?? "[]");
+  } catch (error) {
+    console.warn(
+      `[api] failed to parse user position snapshot for ${userAddress}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
   return {
-    items: Array.isArray(entry.items) ? entry.items : [],
-    syncedAt: Number(entry.syncedAt ?? 0),
+    items: Array.isArray(items) ? items : [],
+    syncedAt: Number(row.synced_at ?? 0),
   };
 }
 
@@ -226,30 +402,32 @@ export function saveUserPositionSnapshot(userAddress, items) {
     ? items.filter((item) => item?.id && item?.contractAddress)
     : [];
 
-  const store = readStore();
-  const nextUserContracts = uniqueNonEmpty([
-    ...(((store.userMarketIndex ?? {})[userAddress]) ?? []),
-    ...normalizedItems.map((item) => item.contractAddress),
-  ]);
+  const syncedAt = Math.floor(Date.now() / 1000);
+  const nextUserContracts = uniqueNonEmpty(normalizedItems.map((item) => item.contractAddress));
 
-  const snapshot = {
-    items: normalizedItems,
-    syncedAt: Math.floor(Date.now() / 1000),
-  };
+  withTransaction((tx) => {
+    tx.prepare(`
+      INSERT INTO user_position_snapshots (user_address, synced_at, items_json)
+      VALUES (?, ?, ?)
+      ON CONFLICT(user_address) DO UPDATE SET
+        synced_at = excluded.synced_at,
+        items_json = excluded.items_json
+    `).run(userAddress, syncedAt, JSON.stringify(normalizedItems));
 
-  writeStore({
-    ...store,
-    userMarketIndex: {
-      ...(store.userMarketIndex ?? {}),
-      [userAddress]: nextUserContracts,
-    },
-    userPositionSnapshots: {
-      ...(store.userPositionSnapshots ?? {}),
-      [userAddress]: snapshot,
-    },
+    const insertIndex = tx.prepare(`
+      INSERT OR IGNORE INTO user_market_index (user_address, contract_address)
+      VALUES (?, ?)
+    `);
+
+    for (const contractAddress of nextUserContracts) {
+      insertIndex.run(userAddress, contractAddress);
+    }
   });
 
-  return snapshot;
+  return {
+    items: normalizedItems,
+    syncedAt,
+  };
 }
 
 export function reservePendingCreate(record) {

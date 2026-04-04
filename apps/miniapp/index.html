@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260404i" />
+    <link rel="stylesheet" href="./styles.css?v=20260404j" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.0.11/dist/tonconnect-ui.min.js"></script>
   </head>
@@ -169,13 +169,42 @@
 
           <div class="positions-section">
             <div class="positions-toolbar">
-              <h3 class="positions-heading">My Positions</h3>
+              <div>
+                <h3 class="positions-heading">My Positions</h3>
+                <p id="positions-sync-meta" class="sync-meta">Connect a wallet to start syncing.</p>
+              </div>
               <button id="positions-refresh-button" type="button" class="ghost-button positions-refresh-button">
                 Refresh
               </button>
             </div>
             <p id="positions-feedback" class="section-feedback">Connect a wallet to load positions.</p>
             <div id="positions-list" class="positions-list"></div>
+          </div>
+
+          <div class="positions-section">
+            <div class="positions-toolbar">
+              <h3 class="positions-heading">My Markets</h3>
+            </div>
+            <p id="user-markets-feedback" class="section-feedback">Tracked markets will appear here after positions load.</p>
+            <div id="user-markets-list" class="positions-list user-markets-list"></div>
+          </div>
+
+          <div class="positions-section admin-section">
+            <div class="positions-toolbar">
+              <div>
+                <h3 class="positions-heading">Admin</h3>
+                <p id="admin-feedback" class="sync-meta">Admin mode is off.</p>
+              </div>
+              <div class="admin-toolbar">
+                <button id="admin-access-button" type="button" class="ghost-button positions-refresh-button">
+                  Admin Access
+                </button>
+                <button id="admin-refresh-button" type="button" class="ghost-button positions-refresh-button" disabled>
+                  Reload
+                </button>
+              </div>
+            </div>
+            <div id="admin-list" class="positions-list admin-list"></div>
           </div>
         </section>
       </main>
@@ -206,6 +235,6 @@
       </nav>
     </div>
 
-    <script src="./app.js?v=20260404i"></script>
+    <script src="./app.js?v=20260404j"></script>
   </body>
 </html>

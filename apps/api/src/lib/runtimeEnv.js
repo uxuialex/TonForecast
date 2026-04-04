@@ -128,3 +128,8 @@ export async function getResolverWalletInfo() {
 export function ensureRuntimeEnvLoaded() {
   loadLocalEnv();
 }
+
+export function getAdminToken() {
+  loadLocalEnv();
+  return process.env.ADMIN_TOKEN?.trim() || "";
+}
