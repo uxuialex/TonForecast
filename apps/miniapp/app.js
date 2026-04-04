@@ -686,6 +686,38 @@ function buildMarketStatusMeta(market) {
   };
 }
 
+function syncVisibleMarketStats() {
+  if (getActivePanelName() !== "markets" || !state.markets.length) {
+    return;
+  }
+
+  const cards = marketGridEl.querySelectorAll("[data-market-address]");
+  for (const card of cards) {
+    const market = state.markets.find(
+      (item) => item.contractAddress === card.dataset.marketAddress,
+    );
+    if (!market) {
+      continue;
+    }
+
+    const nextEffectiveStatus = deriveEffectiveStatus(market);
+    if (card.dataset.effectiveStatus !== nextEffectiveStatus) {
+      renderMarkets(state.markets);
+      return;
+    }
+
+    const statusMeta = buildMarketStatusMeta(market);
+    const statusTextEl = card.querySelector("[data-market-status-text]");
+    const statusValueEl = card.querySelector("[data-market-status-value]");
+    if (statusTextEl) {
+      statusTextEl.textContent = statusMeta.statusText;
+    }
+    if (statusValueEl) {
+      statusValueEl.textContent = statusMeta.statusValue;
+    }
+  }
+}
+
 function renderMarkets(items) {
   if (!items.length) {
     marketGridEl.innerHTML = "";
@@ -711,7 +743,7 @@ function renderMarkets(items) {
       const isPendingCreate = state.pendingCreateAddress === market.contractAddress;
 
       return `
-        <article class="market-card ${isPendingCreate ? "is-pending-market" : ""}" data-market-address="${market.contractAddress}">
+        <article class="market-card ${isPendingCreate ? "is-pending-market" : ""}" data-market-address="${market.contractAddress}" data-effective-status="${effectiveStatus}">
           <div class="market-topline">
             ${assetBadgeHtml(market.token, market.iconUrl)}
             <div class="market-topline__meta">
@@ -730,7 +762,7 @@ function renderMarkets(items) {
           <dl class="market-stats">
             <div><dt>Current</dt><dd>${market.currentPriceLabel}</dd></div>
             <div><dt>Duration</dt><dd>${formatDurationLabel(market.durationSec)}</dd></div>
-            <div><dt>${statusMeta.statusText}</dt><dd>${statusMeta.statusValue}</dd></div>
+            <div><dt data-market-status-text>${statusMeta.statusText}</dt><dd data-market-status-value>${statusMeta.statusValue}</dd></div>
             <div><dt>Close</dt><dd>${new Date(market.closeAt * 1000).toLocaleTimeString()}</dd></div>
             <div><dt>Up pool</dt><dd>${market.yesPoolLabel}</dd></div>
             <div><dt>Down pool</dt><dd>${market.noPoolLabel}</dd></div>
@@ -1535,8 +1567,7 @@ if (window.TON_CONNECT_UI?.TonConnectUI) {
 }
 
 setInterval(() => {
-  renderMarkets(state.markets);
-  renderPositions(state.positions);
+  syncVisibleMarketStats();
 }, 1000);
 
 setInterval(() => {

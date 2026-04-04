@@ -33,6 +33,7 @@ const PRECISION_BY_ASSET = {
   REDO: 6,
 };
 const MARKET_VIEW_CACHE_TTL_MS = 8_000;
+const MARKET_READ_CONCURRENCY = 4;
 const POSITION_READ_CONCURRENCY = 2;
 const POSITION_RECENT_SCAN_LIMIT = 16;
 const POSITION_CACHE_TTL_MS = 15_000;
@@ -243,7 +244,9 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
 }
 
 function getCandidateRecords(records, status, nowSec) {
-  const validRecords = records.filter((record) => !record.createFailedAt);
+  const validRecords = records
+    .filter((record) => !record.createFailedAt)
+    .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
 
   if (status === "OPEN") {
     return validRecords.filter((record) => Number(record.closeAt) > nowSec);
@@ -329,8 +332,10 @@ async function buildMarkets(status = "") {
   const nowSec = Math.floor(Date.now() / 1000);
   const snapshotMap = await getAssetSnapshotMap();
   const records = getCandidateRecords(listMarketRecords(), status, nowSec);
-  const inflight = Promise.all(
-    records.map((record) => buildMarketFromRecord(record, snapshotMap, nowSec)),
+  const inflight = mapConcurrent(
+    records,
+    MARKET_READ_CONCURRENCY,
+    (record) => buildMarketFromRecord(record, snapshotMap, nowSec),
   )
     .then((items) => {
       const normalizedItems = items.filter(Boolean);
