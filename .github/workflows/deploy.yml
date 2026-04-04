@@ -102,12 +102,13 @@ jobs:
               cleanup_worktree
               git reset --hard "$PREV_COMMIT"
               export_build_env "$PREV_BUILD_REF" "$PREV_BUILD_COMMIT" "$PREV_BUILD_TIME"
+              docker compose build api >/dev/null 2>&1 || true
               cleanup_compose_state
               if [ -n "$PREV_BACKUP_FILE" ] && [ -f scripts/restoreRuntimeBackup.mjs ]; then
                 runtime_restore "$PREV_BACKUP_FILE" >/dev/null 2>&1 || true
                 cleanup_compose_state
               fi
-              docker compose up -d --build api miniapp
+              docker compose up -d api miniapp
               wait_for_http http://127.0.0.1:3010 30 2 || true
             }
 
@@ -129,8 +130,9 @@ jobs:
             git reset --hard "$TARGET_COMMIT"
             export_build_env "$TARGET_REF" "$TARGET_COMMIT" "$TARGET_BUILD_TIME"
             if [ -f docker-compose.yml ]; then
+              docker compose build api
               cleanup_compose_state
-              docker compose up -d --build api miniapp
+              docker compose up -d api miniapp
               wait_for_http http://127.0.0.1:3010 30 2
               wait_for_http http://127.0.0.1:3010/api/runtime/health 30 2
               wait_for_http http://127.0.0.1:3010/api/runtime/version 30 2
