@@ -83,6 +83,50 @@ export function saveMarketRecord(record) {
   return record;
 }
 
+export function saveMarketRecords(records) {
+  const normalizedRecords = Array.isArray(records)
+    ? records.filter((record) => record?.contractAddress)
+    : [];
+
+  if (!normalizedRecords.length) {
+    return [];
+  }
+
+  const store = readStore();
+  const items = [...(store.markets ?? [])];
+  const newItems = [];
+
+  for (const record of normalizedRecords) {
+    const existingIndex = items.findIndex((item) => item.contractAddress === record.contractAddress);
+
+    if (existingIndex >= 0) {
+      items[existingIndex] = {
+        ...items[existingIndex],
+        ...record,
+      };
+      continue;
+    }
+
+    const pendingIndex = newItems.findIndex((item) => item.contractAddress === record.contractAddress);
+    if (pendingIndex >= 0) {
+      newItems[pendingIndex] = {
+        ...newItems[pendingIndex],
+        ...record,
+      };
+      continue;
+    }
+
+    newItems.unshift(record);
+  }
+
+  writeStore({
+    ...store,
+    markets: [...newItems, ...items],
+  });
+
+  return normalizedRecords;
+}
+
 export function rememberUserMarket(contractAddress, userAddress) {
   if (!contractAddress || !userAddress) {
     return null;

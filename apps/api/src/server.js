@@ -11,6 +11,7 @@ import { ensureRuntimeEnvLoaded } from "./lib/runtimeEnv.js";
 import { getAssetSnapshots } from "./lib/stonApi.js";
 import {
   getMarketById,
+  getPositionForUser,
   listMarkets,
   listPositions,
 } from "./lib/marketReadModel.js";
@@ -92,11 +93,25 @@ export async function handleRequest(request) {
       const userAddress = url.searchParams.get("userAddress");
       const fresh = url.searchParams.get("fresh") === "1";
       const full = url.searchParams.get("full") === "1";
+      const cachedOnly = url.searchParams.get("cached") === "1";
       if (!userAddress) {
         return json({ error: "userAddress is required" }, { status: 400 });
       }
 
-      return json({ items: await listPositions(userAddress, { fresh, full }) });
+      return json({ items: await listPositions(userAddress, { fresh, full, cachedOnly }) });
+    }
+
+    if (url.pathname.startsWith("/api/positions/market/")) {
+      const contractAddress = decodeURIComponent(url.pathname.split("/").pop() ?? "");
+      const userAddress = url.searchParams.get("userAddress");
+      const fresh = url.searchParams.get("fresh") === "1";
+      if (!userAddress) {
+        return json({ error: "userAddress is required" }, { status: 400 });
+      }
+
+      return json({
+        item: await getPositionForUser(contractAddress, userAddress, { fresh }),
+      });
     }
 
     if (url.pathname === "/api/create-context") {

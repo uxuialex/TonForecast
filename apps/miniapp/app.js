@@ -248,6 +248,9 @@ function buildPositionsQuery(userAddress, options = {}) {
   const params = new URLSearchParams({
     userAddress,
   });
+  if (options.cachedOnly) {
+    params.set("cached", "1");
+  }
   if (options.fresh) {
     params.set("fresh", "1");
   }
@@ -255,6 +258,16 @@ function buildPositionsQuery(userAddress, options = {}) {
     params.set("full", "1");
   }
   return `/api/positions?${params.toString()}`;
+}
+
+function buildSinglePositionQuery(userAddress, contractAddress, options = {}) {
+  const params = new URLSearchParams({
+    userAddress,
+  });
+  if (options.fresh) {
+    params.set("fresh", "1");
+  }
+  return `/api/positions/market/${encodeURIComponent(contractAddress)}?${params.toString()}`;
 }
 
 function renderInlineNotice(element, notice) {
@@ -972,8 +985,9 @@ async function loadPositions(options = {}) {
 
   state.positionsLoading = true;
   syncPositionsRefreshButton();
+  const suppressLoadingUi = options.cachedOnly === true;
   const isSilent = options.silent === true && state.positions.length > 0;
-  if (!isSilent) {
+  if (!isSilent && !suppressLoadingUi) {
     positionsFeedbackEl.textContent =
       options.full && !state.positions.length
         ? "Syncing all positions..."
@@ -982,7 +996,7 @@ async function loadPositions(options = {}) {
           : "Loading positions...";
     positionsFeedbackEl.classList.add("is-loading");
   }
-  if (!state.positions.length && !isSilent) {
+  if (!state.positions.length && !isSilent && !suppressLoadingUi) {
     renderPositionSkeletons();
   }
 
@@ -997,7 +1011,7 @@ async function loadPositions(options = {}) {
     state.positionsLoaded = true;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
-    if (!isSilent) {
+    if (!isSilent && (!options.cachedOnly || state.positions.length > 0)) {
       positionsFeedbackEl.classList.remove("is-loading");
       positionsFeedbackEl.textContent = state.positions.length
         ? `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`
@@ -1012,7 +1026,7 @@ async function loadPositions(options = {}) {
     state.positionsLoaded = state.positions.length > 0;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
-    if (!isSilent) {
+    if (!isSilent && (!options.cachedOnly || state.positions.length > 0)) {
       positionsFeedbackEl.classList.remove("is-loading");
       positionsFeedbackEl.textContent = state.positions.length
         ? `Couldn't refresh positions right now. Showing last known state.`
@@ -1028,6 +1042,18 @@ async function loadPositions(options = {}) {
 }
 
 async function primePositions() {
+  const seeded = await loadPositions({ cachedOnly: true });
+  if (!state.wallet) {
+    return;
+  }
+
+  if (Array.isArray(seeded) && seeded.length > 0) {
+    loadPositions({ fresh: true, full: true, silent: true }).catch((error) => {
+      console.warn("background full positions refresh failed", error);
+    });
+    return;
+  }
+
   await loadPositions({ fresh: true, full: true });
 }
 
@@ -1187,15 +1213,15 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
   const deadlineMs = Date.now() + timeoutMs;
   while (Date.now() < deadlineMs) {
     try {
-      const positionsPayload = await requestJson(
-        buildPositionsQuery(userAddress, { fresh: true, full: true }),
+      const positionPayload = await requestJson(
+        buildSinglePositionQuery(userAddress, contractAddress, { fresh: true }),
       );
-      const nextPosition = (positionsPayload.items ?? []).find((item) => item.contractAddress === contractAddress);
+      const nextPosition = positionPayload.item;
       if (nextPosition && Number(nextPosition.amountTon ?? 0) > previousAmountTon) {
         state.pendingBet = null;
         await Promise.all([
           loadMarkets(state.activeMarketStatus),
-          loadPositions({ fresh: true, full: true }),
+          loadPositions({ fresh: true, full: true, silent: true }),
         ]);
         setMarketNotice(contractAddress, "Bet confirmed onchain.", "success");
         return;
@@ -1210,7 +1236,7 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
   state.pendingBet = null;
   await Promise.all([
     loadMarkets(state.activeMarketStatus),
-    loadPositions({ fresh: true, full: true }),
+    loadPositions({ fresh: true, full: true, silent: true }),
   ]);
   setMarketNotice(contractAddress, "Bet sent. Position refresh may lag briefly while blockchain state propagates.", "warn");
 }
@@ -1275,18 +1301,23 @@ async function handleBetIntent(contractAddress, side) {
 }
 
 async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) {
+  const claimContractAddress = state.pendingClaim?.contractAddress;
+  if (!claimContractAddress) {
+    return;
+  }
+
   const deadlineMs = Date.now() + timeoutMs;
   while (Date.now() < deadlineMs) {
     try {
-      const positionsPayload = await requestJson(
-        buildPositionsQuery(userAddress, { fresh: true, full: true }),
+      const positionPayload = await requestJson(
+        buildSinglePositionQuery(userAddress, claimContractAddress, { fresh: true }),
       );
-      const nextPosition = (positionsPayload.items ?? []).find((item) => item.id === positionId);
+      const nextPosition = positionPayload.item;
       if (nextPosition?.claimed) {
         state.pendingClaim = null;
         await Promise.all([
           loadMarkets(state.activeMarketStatus),
-          loadPositions({ fresh: true, full: true }),
+          loadPositions({ fresh: true, full: true, silent: true }),
         ]);
         setPositionNotice(positionId, "Claim confirmed onchain.", "success");
         return;
@@ -1301,7 +1332,7 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
   state.pendingClaim = null;
   await Promise.all([
     loadMarkets(state.activeMarketStatus),
-    loadPositions({ fresh: true, full: true }),
+    loadPositions({ fresh: true, full: true, silent: true }),
   ]);
   setPositionNotice(positionId, "Claim sent. Wallet balance and position state may update with a short onchain delay.", "warn");
 }

@@ -2,14 +2,18 @@ import {
   buildMarketQuestion,
   buildMarketView,
   buildPositionView,
+  formatPercent,
+  formatTon,
   formatUsd,
+  getMarketOutcomeLabel,
+  getPositionStatusLabel,
 } from "../../../../packages/shared/src/index.js";
 import {
   getIndexedMarketRecordsForUser,
   getMarketRecord,
   getUserPositionSnapshot,
   listMarketRecords,
-  rememberUserMarket,
+  saveMarketRecords,
   saveMarketRecord,
   saveUserPositionSnapshot,
 } from "./marketRegistry.js";
@@ -28,6 +32,7 @@ import {
   STATUS_RESOLVED_DRAW,
   STATUS_RESOLVED_NO,
   STATUS_RESOLVED_YES,
+  invalidateContractCaches,
   nanosToTonDecimal,
   parseAddress,
 } from "./tonForecastMarket.js";
@@ -48,6 +53,7 @@ const POSITION_CACHE_TTL_MS = 45_000;
 const CHAIN_CONFIRM_TIMEOUT_SEC = 120;
 const POSITION_SCOPE_RECENT = "recent";
 const POSITION_SCOPE_FULL = "full";
+const POSITION_SNAPSHOT_LIMIT = 200;
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
 const positionsCache = new Map();
@@ -97,7 +103,7 @@ function buildPersistedSnapshot(record) {
   };
 }
 
-function persistSnapshotIfChanged(record, snapshot) {
+function buildSnapshotPatchIfChanged(record, snapshot, nowSec) {
   const nextPatch = {
     lastKnownThreshold: snapshot.threshold,
     lastKnownDirection: snapshot.direction,
@@ -106,7 +112,7 @@ function persistSnapshotIfChanged(record, snapshot) {
     lastKnownNoPool: snapshot.noPool,
     lastKnownFinalPrice: snapshot.finalPrice,
     lastKnownOutcome: snapshot.outcome,
-    lastKnownSyncedAt: Math.floor(Date.now() / 1000),
+    lastKnownSyncedAt: nowSec,
   };
 
   const hasChanged =
@@ -119,13 +125,40 @@ function persistSnapshotIfChanged(record, snapshot) {
     record.lastKnownOutcome !== nextPatch.lastKnownOutcome;
 
   if (!hasChanged) {
+    return null;
+  }
+
+  return nextPatch;
+}
+
+function queueRecordPatch(recordPatches, record, patch) {
+  if (!patch || !record?.contractAddress) {
     return;
   }
 
-  saveMarketRecord({
+  const nextPatch = {
     contractAddress: record.contractAddress,
-    ...nextPatch,
-  });
+    ...patch,
+  };
+
+  if (recordPatches instanceof Map) {
+    const existingPatch = recordPatches.get(record.contractAddress);
+    recordPatches.set(
+      record.contractAddress,
+      existingPatch ? { ...existingPatch, ...nextPatch } : nextPatch,
+    );
+    return;
+  }
+
+  saveMarketRecord(nextPatch);
+}
+
+function persistQueuedRecordPatches(recordPatches) {
+  if (!(recordPatches instanceof Map) || recordPatches.size === 0) {
+    return;
+  }
+
+  saveMarketRecords([...recordPatches.values()]);
 }
 
 function isBrokenPendingChainRecord(record, nowSec) {
@@ -145,11 +178,11 @@ function isBrokenPendingChainRecord(record, nowSec) {
   return confirmationBaseSec + CHAIN_CONFIRM_TIMEOUT_SEC <= nowSec;
 }
 
-async function buildMarketFromRecord(record, snapshotMap, nowSec) {
+async function buildMarketFromRecord(record, snapshotMap, nowSec, options = {}) {
+  const recordPatches = options.recordPatches ?? null;
   if (isBrokenPendingChainRecord(record, nowSec)) {
     if (!record.createFailedAt) {
-      saveMarketRecord({
-        contractAddress: record.contractAddress,
+      queueRecordPatch(recordPatches, record, {
         createFailedAt: nowSec,
       });
     }
@@ -179,15 +212,23 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
     finalPrice = state.finalPrice > 0n ? Number(state.finalPrice) / 1_000_000 : null;
     outcome = toOutcomeLabel(state.resolvedOutcome);
 
-    persistSnapshotIfChanged(record, {
-      threshold,
-      direction,
-      status,
-      yesPool,
-      noPool,
-      finalPrice,
-      outcome,
-    });
+    queueRecordPatch(
+      recordPatches,
+      record,
+      buildSnapshotPatchIfChanged(
+        record,
+        {
+          threshold,
+          direction,
+          status,
+          yesPool,
+          noPool,
+          finalPrice,
+          outcome,
+        },
+        nowSec,
+      ),
+    );
   } catch (error) {
     const persistedSnapshot = buildPersistedSnapshot(record);
     if (persistedSnapshot) {
@@ -202,8 +243,7 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
     } else {
       if (isBrokenPendingChainRecord(record, nowSec)) {
         if (!record.createFailedAt) {
-          saveMarketRecord({
-            contractAddress: record.contractAddress,
+          queueRecordPatch(recordPatches, record, {
             createFailedAt: nowSec,
           });
         }
@@ -370,22 +410,89 @@ function writePositionsCaches(normalizedUser, items, { includeFull = false } = {
   }
 }
 
+function normalizePersistedPositionItems(items = []) {
+  return items
+    .filter((item) => item?.id && item?.contractAddress)
+    .sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0))
+    .slice(0, POSITION_SNAPSHOT_LIMIT)
+    .map((item) => ({
+      id: item.id,
+      userAddress: item.userAddress,
+      contractAddress: item.contractAddress,
+      side: item.side,
+      amountTon: Number(item.amountTon ?? 0),
+      claimed: Boolean(item.claimed),
+      marketId: item.marketId,
+      createdAt: Number(item.createdAt ?? 0),
+      closeAt: Number(item.closeAt ?? 0),
+      resolveAt: Number(item.resolveAt ?? 0),
+      token: item.token ?? "",
+      iconUrl: item.iconUrl ?? null,
+      question: item.question ?? "",
+      marketStatus: item.marketStatus ?? "OPEN",
+      marketStatusLabel: item.marketStatusLabel ?? "Open",
+      marketOutcome: item.marketOutcome ?? null,
+      sideLabel: item.sideLabel ?? "",
+      totalPoolTon: Number(item.totalPoolTon ?? 0),
+      winningPoolTon: Number(item.winningPoolTon ?? 0),
+      sharePercent: Number(item.sharePercent ?? 0),
+      payoutTon: String(item.payoutTon ?? "0"),
+      protocolFeeTon: String(item.protocolFeeTon ?? "0"),
+      positionStatus: item.positionStatus ?? "NO_POSITION",
+    }));
+}
+
+function hydratePersistedPositionItem(item) {
+  if (!item?.id || !item.contractAddress) {
+    return null;
+  }
+
+  if ("amountLabel" in item && "positionStatusLabel" in item) {
+    return item;
+  }
+
+  const amountTon = Number(item.amountTon ?? 0);
+  const totalPoolTon = Number(item.totalPoolTon ?? 0);
+  const winningPoolTon = Number(item.winningPoolTon ?? 0);
+  const sharePercent = Number(item.sharePercent ?? 0);
+  const payoutTon = String(item.payoutTon ?? "0");
+  const protocolFeeTon = String(item.protocolFeeTon ?? "0");
+  const marketOutcomeLabel = getMarketOutcomeLabel(item.marketOutcome);
+  const positionStatus = item.positionStatus ?? "NO_POSITION";
+
+  return {
+    ...item,
+    amountTon,
+    claimed: Boolean(item.claimed),
+    betLabel: item.side === "YES" ? "Yes" : "No",
+    resultLabel: marketOutcomeLabel,
+    amountLabel: `${formatTon(amountTon)} TON`,
+    totalPoolTon,
+    totalPoolLabel: `${formatTon(totalPoolTon)} TON`,
+    winningPoolTon,
+    winningPoolLabel: `${formatTon(winningPoolTon)} TON`,
+    sharePercent,
+    shareLabel: formatPercent(sharePercent),
+    payoutTon,
+    payoutLabel: payoutTon === "0" ? "0 TON" : `${formatTon(payoutTon)} TON`,
+    protocolFeeTon,
+    protocolFeeLabel: protocolFeeTon === "0" ? "0 TON" : `${formatTon(protocolFeeTon)} TON`,
+    marketOutcomeLabel,
+    positionStatus,
+    positionStatusLabel: getPositionStatusLabel(positionStatus),
+    claimable: positionStatus === "CLAIMABLE",
+  };
+}
+
 function getPersistedPositionItems(normalizedUser) {
-  return getUserPositionSnapshot(normalizedUser)?.items ?? [];
+  return (getUserPositionSnapshot(normalizedUser)?.items ?? [])
+    .map((item) => hydratePersistedPositionItem(item))
+    .filter(Boolean)
+    .sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
 }
 
 function normalizeUserAddress(userAddress) {
   return parseAddress(userAddress).toString();
-}
-
-function getParticipantAddresses(record) {
-  return Array.isArray(record.participantAddresses)
-    ? record.participantAddresses.filter(Boolean)
-    : [];
-}
-
-function markParticipant(record, userAddress) {
-  rememberUserMarket(record.contractAddress, userAddress);
 }
 
 async function buildMarkets(status = "") {
@@ -402,12 +509,14 @@ async function buildMarkets(status = "") {
   const nowSec = Math.floor(Date.now() / 1000);
   const snapshotMap = await getAssetSnapshotMap();
   const records = getCandidateRecords(listMarketRecords(), status, nowSec);
+  const recordPatches = new Map();
   const inflight = mapConcurrent(
     records,
     MARKET_READ_CONCURRENCY,
-    (record) => buildMarketFromRecord(record, snapshotMap, nowSec),
+    (record) => buildMarketFromRecord(record, snapshotMap, nowSec, { recordPatches }),
   )
     .then((items) => {
+      persistQueuedRecordPatches(recordPatches);
       const normalizedItems = items.filter(Boolean);
       marketViewCache.set(cacheKey, {
         items: normalizedItems,
@@ -491,6 +600,7 @@ async function buildPositions(userAddress, options = {}) {
   const sortedRecords = getPositionCandidateRecords(normalizedUser, options);
   const nowSec = Math.floor(Date.now() / 1000);
   const snapshotMap = await getAssetSnapshotMap();
+  const recordPatches = new Map();
   const entries = await mapConcurrent(
     sortedRecords,
     POSITION_READ_CONCURRENCY,
@@ -505,8 +615,9 @@ async function buildPositions(userAddress, options = {}) {
           return null;
         }
 
-        markParticipant(record, normalizedUser);
-        const marketView = await buildMarketFromRecord(record, snapshotMap, nowSec);
+        const marketView = await buildMarketFromRecord(record, snapshotMap, nowSec, {
+          recordPatches,
+        });
         if (!marketView) {
           return null;
         }
@@ -532,15 +643,72 @@ async function buildPositions(userAddress, options = {}) {
     },
   );
 
+  persistQueuedRecordPatches(recordPatches);
+
   return entries
     .filter(Boolean)
     .sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
+}
+
+async function buildSinglePosition(contractAddress, userAddress, options = {}) {
+  const normalizedUser = normalizeUserAddress(userAddress);
+  const normalizedAddress = parseAddress(contractAddress).toString();
+  const record = getMarketRecord(normalizedAddress);
+  if (!record || record.createFailedAt) {
+    return null;
+  }
+
+  if (options.fresh) {
+    invalidateContractCaches(normalizedAddress);
+  }
+
+  const snapshotMap = await getAssetSnapshotMap();
+  const nowSec = Math.floor(Date.now() / 1000);
+  const recordPatches = new Map();
+
+  try {
+    const stake = await getCachedUserStake(normalizedAddress, normalizedUser);
+    const amountYesTon = nanosToTonDecimal(stake.yesAmount);
+    const amountNoTon = nanosToTonDecimal(stake.noAmount);
+    const totalAmountTon = amountYesTon + amountNoTon;
+
+    if (totalAmountTon <= 0) {
+      return null;
+    }
+
+    const marketView = await buildMarketFromRecord(record, snapshotMap, nowSec, {
+      recordPatches,
+    });
+    if (!marketView) {
+      persistQueuedRecordPatches(recordPatches);
+      return null;
+    }
+
+    persistQueuedRecordPatches(recordPatches);
+    return buildPositionView(
+      {
+        id: `${normalizedAddress}:${normalizedUser}`,
+        userAddress: normalizedUser,
+        contractAddress: normalizedAddress,
+        side: amountYesTon > 0 ? "YES" : "NO",
+        amountTon: totalAmountTon,
+        claimed: stake.claimed,
+      },
+      marketView,
+    );
+  } catch (error) {
+    console.warn(
+      `[api] failed to read single position for ${normalizedAddress}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    return null;
+  }
 }
 
 export async function listPositions(userAddress, options = {}) {
   const normalizedUser = normalizeUserAddress(userAddress);
   const fresh = options.fresh === true;
   const full = options.full === true;
+  const cachedOnly = options.cachedOnly === true;
   const inflightKey = getPositionsCacheKey(
     normalizedUser,
     full ? POSITION_SCOPE_FULL : POSITION_SCOPE_RECENT,
@@ -554,9 +722,13 @@ export async function listPositions(userAddress, options = {}) {
       persistedItems,
       getPreferredCachedPositions(normalizedUser, { full }) ?? [],
     );
-    if (cached.length) {
+    if (cached.length || cachedOnly) {
       return cached;
     }
+  }
+
+  if (cachedOnly) {
+    return [];
   }
 
   if (full) {
@@ -580,7 +752,7 @@ export async function listPositions(userAddress, options = {}) {
       );
       const mergedItems = mergePositionItems(previousItems, items);
       writePositionsCaches(normalizedUser, mergedItems, { includeFull: full });
-      saveUserPositionSnapshot(normalizedUser, mergedItems);
+      saveUserPositionSnapshot(normalizedUser, normalizePersistedPositionItems(mergedItems));
       return mergedItems;
     })
     .catch((error) => {
@@ -604,6 +776,10 @@ export async function listPositions(userAddress, options = {}) {
 
   positionsInflight.set(inflightKey, inflight);
   return inflight;
+}
+
+export async function getPositionForUser(contractAddress, userAddress, options = {}) {
+  return buildSinglePosition(contractAddress, userAddress, options);
 }
 
 export function invalidateMarketViewCache() {
