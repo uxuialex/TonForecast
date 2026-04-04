@@ -39,7 +39,7 @@ import {
   toPrice6,
 } from "./tonForecastMarket.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
-import { scheduleAutoResolve } from "./resolverAutomation.js";
+import { scheduleAutoResolveForRecord } from "./resolverAutomation.js";
 
 const SUPPORTED_DURATIONS = MARKET_DURATIONS;
 const CREATE_RESOLVE_DELAY_SEC = 10;
@@ -236,7 +236,7 @@ export async function confirmCreate(contractAddress) {
 
   invalidateContractCaches(record.contractAddress);
   invalidateMarketViewCache();
-  scheduleAutoResolve(record.contractAddress, 5_000);
+  scheduleAutoResolveForRecord(record);
   return record;
 }
 

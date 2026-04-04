@@ -5,8 +5,9 @@ const activeResolvers = new Map();
 const resolverRetryCounts = new Map();
 const INITIAL_DELAY_MS = 10_000;
 const MAX_RETRY_DELAY_MS = 60_000;
-const BOOTSTRAP_LOOKBACK_SEC = 15 * 60;
-const BOOTSTRAP_MAX_MARKETS = 6;
+const AUTO_RESOLVE_LOOKAHEAD_SEC = 10 * 60;
+const AUTO_RESOLVE_SWEEP_INTERVAL_MS = 60_000;
+let sweepTimer = null;
 
 function getNpmCommand() {
   return process.platform === "win32" ? "npm.cmd" : "npm";
@@ -70,14 +71,70 @@ export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
   activeResolvers.set(marketAddress, timer);
 }
 
-export function bootstrapAutoResolvers() {
+function isResolvedRecord(record) {
+  return typeof record?.lastKnownStatus === "string" && record.lastKnownStatus.startsWith("RESOLVED");
+}
+
+function isAutoResolvableRecord(record, nowSec) {
+  if (!record?.contractAddress || record.createFailedAt || isResolvedRecord(record)) {
+    return false;
+  }
+
+  const resolveAt = Number(record.resolveAt ?? 0);
+  if (!Number.isFinite(resolveAt) || resolveAt <= 0) {
+    return false;
+  }
+
+  return resolveAt <= nowSec + AUTO_RESOLVE_LOOKAHEAD_SEC;
+}
+
+function getAutoResolveDelayMs(record, nowSec) {
+  const resolveAt = Number(record.resolveAt ?? 0);
+  if (!Number.isFinite(resolveAt) || resolveAt <= nowSec) {
+    return 1_000;
+  }
+
+  return Math.max(1_000, (resolveAt - nowSec) * 1_000 + 1_000);
+}
+
+export function scheduleAutoResolveForRecord(record, nowSec = Math.floor(Date.now() / 1000)) {
+  if (!isAutoResolvableRecord(record, nowSec)) {
+    return false;
+  }
+
+  scheduleAutoResolve(record.contractAddress, getAutoResolveDelayMs(record, nowSec));
+  return true;
+}
+
+export function runAutoResolverSweep() {
   const nowSec = Math.floor(Date.now() / 1000);
   const candidates = listMarketRecords()
-    .filter((record) => Number(record.resolveAt) >= nowSec - BOOTSTRAP_LOOKBACK_SEC)
-    .sort((left, right) => Number(left.resolveAt) - Number(right.resolveAt))
-    .slice(0, BOOTSTRAP_MAX_MARKETS);
+    .filter((record) => isAutoResolvableRecord(record, nowSec))
+    .sort((left, right) => Number(left.resolveAt) - Number(right.resolveAt));
 
-  for (const [index, record] of candidates.entries()) {
-    scheduleAutoResolve(record.contractAddress, 1_000 + index * 1_500);
+  for (const record of candidates) {
+    scheduleAutoResolveForRecord(record, nowSec);
   }
+
+  return candidates.length;
+}
+
+export function bootstrapAutoResolvers() {
+  runAutoResolverSweep();
+
+  if (sweepTimer) {
+    return;
+  }
+
+  sweepTimer = setInterval(() => {
+    try {
+      runAutoResolverSweep();
+    } catch (error) {
+      console.error(
+        `[auto-resolver] sweep failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }, AUTO_RESOLVE_SWEEP_INTERVAL_MS);
+
+  sweepTimer.unref?.();
 }
