@@ -54,6 +54,20 @@ jobs:
               return 1
             }
 
+            wait_for_api_health() {
+              local attempts="${1:-20}"
+              local delay="${2:-3}"
+
+              for _ in $(seq 1 "$attempts"); do
+                if docker compose exec -T api node -e "fetch('http://127.0.0.1:3001/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))" >/dev/null 2>&1; then
+                  return 0
+                fi
+                sleep "$delay"
+              done
+
+              return 1
+            }
+
             cleanup_compose_state() {
               docker compose down --remove-orphans 2>/dev/null || true
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
@@ -109,7 +123,9 @@ jobs:
                 runtime_restore "$PREV_BACKUP_FILE" >/dev/null 2>&1 || true
                 cleanup_compose_state
               fi
-              docker compose up -d api miniapp
+              docker compose up -d api
+              wait_for_api_health 30 2 || true
+              docker compose up -d miniapp
               wait_for_http http://127.0.0.1:3010 30 2 || true
             }
 
@@ -133,7 +149,9 @@ jobs:
             if [ -f docker-compose.yml ]; then
               docker compose build api
               cleanup_compose_state
-              docker compose up -d api miniapp
+              docker compose up -d api
+              wait_for_api_health 30 2
+              docker compose up -d miniapp
               wait_for_http http://127.0.0.1:3010 30 2
               wait_for_http http://127.0.0.1:3010/api/runtime/health 30 2
               wait_for_http http://127.0.0.1:3010/api/runtime/version 30 2

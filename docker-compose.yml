@@ -3,7 +3,8 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     ports:
       - "127.0.0.1:3010:80"
     volumes:
@@ -15,6 +16,18 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3001/healthz').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
     environment:
       BUILD_VERSION: ${BUILD_VERSION:-}
       BUILD_COMMIT: ${BUILD_COMMIT:-}
