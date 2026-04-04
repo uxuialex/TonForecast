@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      target_ref:
+        description: Git ref, tag, or commit to deploy
+        required: false
+        type: string
 
 concurrency:
   group: deploy-vps
@@ -17,17 +22,21 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+          TARGET_REF: ${{ github.event.inputs.target_ref || github.sha }}
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
           key: ${{ secrets.DEPLOY_SSH_KEY }}
           script_stop: true
-          envs: DEPLOY_PATH
+          envs: DEPLOY_PATH,TARGET_REF
           script: |
             set -euo pipefail
             cd "$DEPLOY_PATH"
             PREV_COMMIT="$(git rev-parse HEAD)"
             PREV_BACKUP_FILE=""
+            PREV_BUILD_COMMIT="$PREV_COMMIT"
+            PREV_BUILD_REF="$PREV_COMMIT"
+            PREV_BUILD_TIME=""
 
             wait_for_http() {
               local url="$1"
@@ -44,16 +53,46 @@ jobs:
               return 1
             }
 
+            runtime_backup() {
+              local reason="${1:-manual}"
+              docker run --rm -v "$DEPLOY_PATH:/app" -w /app node:22-alpine \
+                node scripts/exportRuntimeBackup.mjs "$reason"
+            }
+
+            runtime_restore() {
+              local file_name="$1"
+              docker run --rm -v "$DEPLOY_PATH:/app" -w /app node:22-alpine \
+                node scripts/restoreRuntimeBackup.mjs "$file_name"
+            }
+
+            read_package_version() {
+              sed -n 's/^[[:space:]]*"version":[[:space:]]*"\([^"]*\)".*/\1/p' package.json | head -n 1
+            }
+
+            export_build_env() {
+              local build_ref="$1"
+              local build_commit="$2"
+              local build_time="$3"
+              local build_version
+
+              build_version="$(read_package_version)"
+              export BUILD_VERSION="${build_version:-0.0.0}"
+              export BUILD_REF="$build_ref"
+              export BUILD_COMMIT="$build_commit"
+              export BUILD_TIME="$build_time"
+            }
+
             rollback() {
               trap - ERR
               set +e
               echo "[deploy] rollback to ${PREV_COMMIT}"
               git reset --hard "$PREV_COMMIT"
+              export_build_env "$PREV_BUILD_REF" "$PREV_BUILD_COMMIT" "$PREV_BUILD_TIME"
               docker compose down --remove-orphans 2>/dev/null || true
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
               if [ -n "$PREV_BACKUP_FILE" ] && [ -f scripts/restoreRuntimeBackup.mjs ]; then
-                node scripts/restoreRuntimeBackup.mjs "$PREV_BACKUP_FILE" >/dev/null 2>&1 || true
+                runtime_restore "$PREV_BACKUP_FILE" >/dev/null 2>&1 || true
               fi
               docker compose up -d --build api miniapp
               wait_for_http http://127.0.0.1:3010 30 2 || true
@@ -61,11 +100,20 @@ jobs:
 
             trap rollback ERR
             if [ -f scripts/exportRuntimeBackup.mjs ]; then
-              BACKUP_JSON="$(node scripts/exportRuntimeBackup.mjs deploy-preflight 2>/dev/null || true)"
+              BACKUP_JSON="$(runtime_backup deploy-preflight 2>/dev/null || true)"
               PREV_BACKUP_FILE="$(printf '%s' "$BACKUP_JSON" | sed -n 's/.*"fileName": *"\([^"]*\)".*/\1/p' | head -n 1)"
             fi
-            git fetch origin main
-            git reset --hard origin/main
+            git fetch --tags origin
+            TARGET_REF="${TARGET_REF:-origin/main}"
+            TARGET_GIT_REF="$TARGET_REF"
+            if git show-ref --verify --quiet "refs/remotes/origin/${TARGET_REF}"; then
+              TARGET_GIT_REF="refs/remotes/origin/${TARGET_REF}"
+            fi
+            TARGET_COMMIT="$(git rev-parse "${TARGET_GIT_REF}^{commit}")"
+            TARGET_BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            PREV_BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            git reset --hard "$TARGET_COMMIT"
+            export_build_env "$TARGET_REF" "$TARGET_COMMIT" "$TARGET_BUILD_TIME"
             if [ -f docker-compose.yml ]; then
               docker compose down --remove-orphans 2>/dev/null || true
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
@@ -73,6 +121,7 @@ jobs:
               docker compose up -d --build api miniapp
               wait_for_http http://127.0.0.1:3010 30 2
               wait_for_http http://127.0.0.1:3010/api/runtime/health 30 2
+              wait_for_http http://127.0.0.1:3010/api/runtime/version 30 2
               wait_for_http http://127.0.0.1:3010/api/prices 30 2
               wait_for_http "http://127.0.0.1:3010/api/markets?status=OPEN" 30 2
             fi

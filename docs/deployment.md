@@ -36,15 +36,17 @@ Public domain
 The current [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) does this on each push to `main`:
 
 1. SSH to the VPS
-2. `git fetch origin main`
-3. `git reset --hard origin/main`
-4. remove stale `ton-forecast-api` containers
-5. rebuild and recreate `api`
-6. recreate `miniapp`
-7. smoke-check `/`, `/api/runtime/health`, `/api/prices`, and `/api/markets?status=OPEN`
-8. rollback to the previous commit if those checks fail
+2. export a runtime backup before touching containers
+3. `git fetch --tags origin main`
+4. `git reset --hard` to the exact triggering commit or the manually requested `target_ref`
+5. remove stale `ton-forecast-api` and `ton-forecast-miniapp` containers
+6. rebuild and recreate `api` and `miniapp`
+7. smoke-check `/`, `/api/runtime/health`, `/api/runtime/version`, `/api/prices`, and `/api/markets?status=OPEN`
+8. rollback to the previous commit and restore the runtime backup if those checks fail
 
 That split is intentional. Recreating `miniapp` after `api` avoids stale nginx upstream state inside Docker.
+
+When you run the workflow manually, you can optionally provide `target_ref` as a branch, tag, or commit SHA. That gives you a clean “deploy this exact version” path without logging into the VPS.
 
 ## GitHub Secrets
 
@@ -119,6 +121,7 @@ After deploy, these checks should work on the VPS:
 ```bash
 curl -I http://127.0.0.1:3010
 curl http://127.0.0.1:3010/api/runtime/health
+curl http://127.0.0.1:3010/api/runtime/version
 curl http://127.0.0.1:3010/api/prices
 curl "http://127.0.0.1:3010/api/markets?status=OPEN"
 curl "http://127.0.0.1:3010/api/my-markets?userAddress=0:..."
@@ -129,6 +132,7 @@ And from outside:
 ```bash
 curl -I https://app.your-domain.com
 curl https://app.your-domain.com/api/runtime/health
+curl https://app.your-domain.com/api/runtime/version
 curl https://app.your-domain.com/api/prices
 ```
 

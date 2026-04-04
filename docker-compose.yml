@@ -15,6 +15,11 @@ services:
       context: .
       dockerfile: apps/api/Dockerfile
     restart: unless-stopped
+    environment:
+      BUILD_VERSION: ${BUILD_VERSION:-}
+      BUILD_COMMIT: ${BUILD_COMMIT:-}
+      BUILD_REF: ${BUILD_REF:-}
+      BUILD_TIME: ${BUILD_TIME:-}
     env_file:
       - path: .env.local
         required: false

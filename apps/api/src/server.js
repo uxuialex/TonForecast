@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { readAssetIcon } from "./lib/assets.js";
+import { getBuildInfo } from "./lib/buildInfo.js";
 import {
   appendAdminAuditEntry,
   exportRuntimeBackup,
@@ -128,6 +129,8 @@ function buildRuntimeHealthPayload() {
   return {
     ok: true,
     service: "api",
+    build: getBuildInfo(),
+    uptimeSec: Math.floor(process.uptime()),
     runtimeStore: getRuntimeStoreStats(),
     tonRpcPool: getTonRpcPoolSnapshot(),
     autoResolver: getAutoResolverStatus(),
@@ -155,6 +158,10 @@ export async function handleRequest(request) {
 
     if (url.pathname === "/api/runtime/health") {
       return json(buildRuntimeHealthPayload());
+    }
+
+    if (url.pathname === "/api/runtime/version") {
+      return json(getBuildInfo());
     }
 
     if (url.pathname === "/api/runtime/resolver") {

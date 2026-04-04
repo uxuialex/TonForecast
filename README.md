@@ -29,7 +29,7 @@ The main files to read first are:
 ## Product Rules
 
 - One active market per `asset + duration`
-- Current UI creates `above` markets only
+- Current UI creates both `above` and `below` markets
 - Supported durations are `5 min`, `15 min`, `30 min`, `60 min`, `1 day`, `3 days`, `1 week`, `1 month`
 - Supported assets are `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
 - `TON` price uses CoinMarketCap with STON fallback
@@ -99,6 +99,7 @@ curl "http://127.0.0.1:3010/api/markets?status=OPEN"
 curl "http://127.0.0.1:3010/api/positions?userAddress=0:..."
 curl "http://127.0.0.1:3010/api/my-markets?userAddress=0:..."
 curl http://127.0.0.1:3010/api/runtime/health
+curl http://127.0.0.1:3010/api/runtime/version
 ```
 
 ## Make It Your Own

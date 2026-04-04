@@ -226,6 +226,10 @@ async function testServerAdminRoutes() {
   await withTempRuntimeDir(async () => {
     process.env.ADMIN_TOKEN = "secret-token";
     process.env.ADMIN_ALLOWED_WALLETS = sampleContract;
+    process.env.BUILD_VERSION = "9.9.9";
+    process.env.BUILD_COMMIT = "abcdef1234567890";
+    process.env.BUILD_REF = "refs/tags/v9.9.9";
+    process.env.BUILD_TIME = "2026-04-04T11:00:00Z";
     const registry = await importFresh("apps/api/src/lib/marketRegistry.js");
     registry.saveMarketRecord({
       contractAddress: sampleContract,
@@ -287,6 +291,16 @@ async function testServerAdminRoutes() {
     const healthPayload = await healthResponse.json();
     assert.equal(healthPayload.ok, true);
     assert.equal(healthPayload.runtimeStore.marketCount, 1);
+    assert.equal(healthPayload.build.version, "9.9.9");
+    assert.equal(healthPayload.build.shortCommit, "abcdef123456");
+    assert.equal(healthPayload.build.ref, "refs/tags/v9.9.9");
+    assert.equal(healthPayload.uptimeSec >= 0, true);
+
+    const versionResponse = await handleRequest(new Request("http://localhost/api/runtime/version"));
+    assert.equal(versionResponse.status, 200);
+    const versionPayload = await versionResponse.json();
+    assert.equal(versionPayload.version, "9.9.9");
+    assert.equal(versionPayload.commit, "abcdef1234567890");
 
     const resolverResponse = await handleRequest(new Request("http://localhost/api/runtime/resolver"));
     assert.equal(resolverResponse.status, 200);
@@ -328,6 +342,10 @@ async function testServerAdminRoutes() {
 
     delete process.env.ADMIN_TOKEN;
     delete process.env.ADMIN_ALLOWED_WALLETS;
+    delete process.env.BUILD_VERSION;
+    delete process.env.BUILD_COMMIT;
+    delete process.env.BUILD_REF;
+    delete process.env.BUILD_TIME;
   });
 }
 
