@@ -50,11 +50,17 @@ async function testRuntimeEnvFailover() {
     assert.equal(snapshot[0].blocked, true);
     assert.equal(snapshot[1].id, "rpc2");
     assert.ok(snapshot[1].successes >= 1);
+    assert.equal(runtimeEnv.getTreasuryAddress(sampleContract), sampleContract);
+
+    process.env.TREASURY_ADDRESS = sampleContract;
+    const runtimeEnvWithTreasury = await importFresh("apps/api/src/lib/runtimeEnv.js");
+    assert.equal(runtimeEnvWithTreasury.getTreasuryAddress(""), sampleContract);
 
     delete process.env.TON_API_ENDPOINTS;
     delete process.env.TON_API_ENDPOINT;
     delete process.env.TON_RPC_FAILURE_THRESHOLD;
     delete process.env.TON_RPC_COOLDOWN_MS;
+    delete process.env.TREASURY_ADDRESS;
   });
 }
 
@@ -78,6 +84,7 @@ async function testRuntimeStoreMigrationAndBackup() {
               direction: "above",
               ownerAddress: sampleContract,
               resolverAddress: sampleContract,
+              treasuryAddress: sampleContract,
               lastKnownStatus: "RESOLVED_DRAW",
               lastKnownYesPool: 1,
               lastKnownNoPool: 1,
@@ -147,6 +154,7 @@ async function testServerAdminRoutes() {
       direction: "above",
       ownerAddress: sampleContract,
       resolverAddress: sampleContract,
+      treasuryAddress: sampleContract,
       lastKnownStatus: "RESOLVED_DRAW",
       lastKnownYesPool: 1,
       lastKnownNoPool: 1,

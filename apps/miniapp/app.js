@@ -82,6 +82,7 @@ const positionsFeedbackEl = document.querySelector("#positions-feedback");
 const positionsSyncMetaEl = document.querySelector("#positions-sync-meta");
 const positionsListEl = document.querySelector("#positions-list");
 const positionsRefreshButtonEl = document.querySelector("#positions-refresh-button");
+const positionsFilterButtonEl = document.querySelector("#positions-filter-button");
 const userMarketsFeedbackEl = document.querySelector("#user-markets-feedback");
 const userMarketsSyncMetaEl = document.querySelector("#user-markets-sync-meta");
 const userMarketsListEl = document.querySelector("#user-markets-list");
@@ -159,6 +160,7 @@ const state = {
   createContextLoaded: false,
   positionsLoaded: false,
   positionsLoading: false,
+  positionsFilter: "all",
   pendingCreateAddress: null,
   createSubmitting: false,
   pendingBet: null,
@@ -630,6 +632,56 @@ function setUserMarketsSyncMeta(message) {
   userMarketsSyncMetaEl.textContent = message;
 }
 
+function getFilteredPositions(items = state.positions) {
+  if (state.positionsFilter !== "claimable") {
+    return items;
+  }
+
+  return items.filter((item) => item.claimable);
+}
+
+function getClaimablePositions(items = state.positions) {
+  return items.filter((item) => item.claimable);
+}
+
+function syncPositionsFilterButton() {
+  if (!positionsFilterButtonEl) {
+    return;
+  }
+
+  positionsFilterButtonEl.disabled = !state.wallet;
+  positionsFilterButtonEl.classList.toggle("is-active", state.positionsFilter === "claimable");
+  positionsFilterButtonEl.setAttribute(
+    "aria-pressed",
+    state.positionsFilter === "claimable" ? "true" : "false",
+  );
+  positionsFilterButtonEl.textContent =
+    state.positionsFilter === "claimable" ? "Showing claimable" : "Claimable only";
+}
+
+function syncPositionsFeedback(items = state.positions) {
+  if (!positionsFeedbackEl || !state.wallet || state.positionsLoading) {
+    return;
+  }
+
+  const filteredItems = getFilteredPositions(items);
+  const claimableCount = getClaimablePositions(items).length;
+
+  if (!items.length) {
+    positionsFeedbackEl.textContent = "No positions yet.";
+    return;
+  }
+
+  if (!filteredItems.length && state.positionsFilter === "claimable") {
+    positionsFeedbackEl.textContent = `No claimable positions right now. ${items.length} tracked position${items.length === 1 ? "" : "s"} total.`;
+    return;
+  }
+
+  positionsFeedbackEl.textContent = claimableCount > 0
+    ? `${filteredItems.length} visible position${filteredItems.length === 1 ? "" : "s"} • ${claimableCount} claimable`
+    : `${filteredItems.length} visible position${filteredItems.length === 1 ? "" : "s"}`;
+}
+
 function buildMarketFlagsHtml(market) {
   const flags = [];
   if (market.isLegacyMarket) {
@@ -968,6 +1020,7 @@ function renderAdminMarkets(items) {
           <div class="admin-market-summary">
             <span>Status: ${market.statusLabel}</span>
             <span>Contract: ${shortAddress(market.contractAddress)}</span>
+            <span>Treasury: ${shortAddress(market.treasuryAddress ?? market.resolverAddress)}</span>
             ${market.adminHiddenReason ? `<span>Hide note: ${market.adminHiddenReason}</span>` : ""}
             ${market.adminLegacyReason ? `<span>Legacy note: ${market.adminLegacyReason}</span>` : ""}
             ${market.autoResolveBlockedReason ? `<span>Resolver: ${market.autoResolveBlockedReason}</span>` : ""}
@@ -1448,13 +1501,18 @@ function renderPositions(items) {
     return;
   }
 
-  if (!items.length) {
+  const visibleItems = getFilteredPositions(items);
+
+  if (!visibleItems.length) {
     positionsListEl.innerHTML =
-      '<div class="position-empty">No positions yet. Create a market or place a bet to start the demo flow.</div>';
+      state.positionsFilter === "claimable" && items.length
+        ? '<div class="position-empty">No claimable positions right now. Switch the filter off to see all tracked positions.</div>'
+        : '<div class="position-empty">No positions yet. Create a market or place a bet to start the demo flow.</div>';
+    syncPositionsFeedback(items);
     return;
   }
 
-  positionsListEl.innerHTML = items
+  positionsListEl.innerHTML = visibleItems
     .map(
       (position) => `
         <article class="position-row" data-position-id="${position.id}" data-market-id="${position.marketId}">
@@ -1511,11 +1569,12 @@ function renderPositions(items) {
       `,
     )
     .join("");
-
+  syncPositionsFeedback(items);
 }
 
 function syncPositionsRefreshButton() {
   if (!positionsRefreshButtonEl) {
+    syncPositionsFilterButton();
     return;
   }
 
@@ -1523,6 +1582,7 @@ function syncPositionsRefreshButton() {
   positionsRefreshButtonEl.disabled = disabled;
   positionsRefreshButtonEl.classList.toggle("is-busy", state.positionsLoading);
   positionsRefreshButtonEl.textContent = state.positionsLoading ? "Refreshing..." : "Refresh";
+  syncPositionsFilterButton();
 }
 
 async function loadPositions(options = {}) {
@@ -1576,9 +1636,6 @@ async function loadPositions(options = {}) {
     );
     if (!isSilent && (!options.cachedOnly || state.positions.length > 0)) {
       positionsFeedbackEl.classList.remove("is-loading");
-      positionsFeedbackEl.textContent = state.positions.length
-        ? `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`
-        : "No positions yet.";
     }
     renderPositions(state.positions);
     return state.positions;
@@ -2254,6 +2311,16 @@ positionsRefreshButtonEl?.addEventListener("click", () => {
     loadPositions({ fresh: true, full: true }),
     loadUserMarkets(),
   ]);
+});
+
+positionsFilterButtonEl?.addEventListener("click", () => {
+  if (!state.wallet) {
+    return;
+  }
+
+  state.positionsFilter = state.positionsFilter === "claimable" ? "all" : "claimable";
+  syncPositionsFilterButton();
+  renderPositions(state.positions);
 });
 
 adminAccessButtonEl?.addEventListener("click", () => {

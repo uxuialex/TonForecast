@@ -12,7 +12,7 @@ Live demo:
 The production app is split into four practical parts:
 
 - [apps/miniapp](apps/miniapp): Telegram Mini App frontend, TON Connect bootstrap, market and profile UI
-- [apps/api](apps/api): backend read model, action intents, price snapshots, runtime registry, auto-resolver bootstrap
+- [apps/api](apps/api): backend read model, action intents, price snapshots, SQLite runtime store, admin routes, and in-process auto-resolver
 - [contracts](contracts): Tolk market contract and contract spec
 - [scripts](scripts): manual create, bet, resolve, claim, and auto-resolve scripts
 
@@ -37,7 +37,8 @@ The main files to read first are:
 - Markets resolve automatically after `resolveAt`
 - Claim is available only after `RESOLVED_*`
 - Exact threshold hit resolves to `DRAW`
-- Protocol fee is `2%` of winnings
+- Uncontested markets resolve to `DRAW`
+- Protocol fee is `2%` of winnings and goes to the configured treasury wallet
 
 ## Price And Settlement Sources
 
@@ -50,7 +51,7 @@ The main files to read first are:
 
 ```text
 apps/
-  api/            Backend API, runtime registry, icons, resolver bootstrap
+  api/            Backend API, SQLite runtime store, icons, resolver queue
   miniapp/        Telegram Mini App frontend
   resolver/       Legacy notes and standalone resolver package docs
 contracts/        Tolk contract and contract-level spec
@@ -95,6 +96,8 @@ Useful checks:
 curl http://127.0.0.1:3010/api/prices
 curl "http://127.0.0.1:3010/api/markets?status=OPEN"
 curl "http://127.0.0.1:3010/api/positions?userAddress=0:..."
+curl "http://127.0.0.1:3010/api/my-markets?userAddress=0:..."
+curl http://127.0.0.1:3010/api/runtime/health
 ```
 
 ## Make It Your Own
@@ -104,7 +107,7 @@ If you are forking this repo and launching your own version, start here:
 1. Read [docs/self-hosting.md](docs/self-hosting.md).
 2. Update [apps/miniapp/tonconnect-manifest.json](apps/miniapp/tonconnect-manifest.json) to your domain.
 3. Update `TWA_RETURN_URL` in [apps/miniapp/app.js](apps/miniapp/app.js) to your Telegram bot Mini App link.
-4. Put your own runtime secrets into `.env.local` on the server.
+4. Put your own runtime secrets into `.env.local` on the server, especially `RESOLVER_MNEMONIC`, `TREASURY_ADDRESS`, `ADMIN_TOKEN`, and `ADMIN_ALLOWED_WALLETS`.
 5. Configure GitHub Actions secrets for [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml).
 6. Point your Telegram bot Web App button to your public HTTPS URL.
 
@@ -114,7 +117,9 @@ Important: this repository does not include Telegram bot code. Any bot that open
 
 - Market create / bet / claim intents: [apps/api/src/lib/marketActions.js](apps/api/src/lib/marketActions.js)
 - Market list / positions read model: [apps/api/src/lib/marketReadModel.js](apps/api/src/lib/marketReadModel.js)
+- Runtime store, backups, audit log: [apps/api/src/lib/marketRegistry.js](apps/api/src/lib/marketRegistry.js)
 - Auto-resolver bootstrap: [apps/api/src/lib/resolverAutomation.js](apps/api/src/lib/resolverAutomation.js)
+- Auto-resolver worker: [apps/api/src/lib/marketAutoResolver.js](apps/api/src/lib/marketAutoResolver.js)
 - TON RPC and resolver wallet env loading: [apps/api/src/lib/runtimeEnv.js](apps/api/src/lib/runtimeEnv.js)
 - Token icon registry: [apps/api/src/lib/assets.js](apps/api/src/lib/assets.js)
 - Frontend wallet bootstrap and panels: [apps/miniapp/app.js](apps/miniapp/app.js)
@@ -127,6 +132,7 @@ Important: this repository does not include Telegram bot code. Any bot that open
 Useful script entry points:
 
 - Auto-resolve one market: `MARKET_ADDRESS=EQ... npm run resolver:auto`
+- Export runtime backup: `npm run backup:runtime`
 - Deploy contract via Blueprint: `npx blueprint run deployTonForecastMarket`
 - Create a market manually: `npx blueprint run createTonForecastMarket`
 - Place a bet manually: `npx blueprint run betTonForecastMarket`
@@ -145,7 +151,7 @@ Useful script entry points:
 
 Current repo state is safe for public source:
 
-- `.env`, `.env.local`, and runtime JSON are ignored
+- `.env`, `.env.local`, runtime JSON, and runtime SQLite files under `apps/api/data/runtime/*.db*` are ignored
 - GitHub workflow reads deploy credentials only from GitHub Secrets
 - Token icons are local assets under [apps/api/public/asset-icons](apps/api/public/asset-icons)
 

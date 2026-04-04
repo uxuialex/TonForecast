@@ -13,7 +13,7 @@ import {
   reservePendingCreate,
   saveMarketRecord,
 } from "./marketRegistry.js";
-import { getResolverWalletInfo } from "./runtimeEnv.js";
+import { getResolverWalletInfo, getTreasuryAddress } from "./runtimeEnv.js";
 import { invalidateMarketViewCache } from "./marketReadModel.js";
 import {
   createBetBody,
@@ -170,6 +170,9 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec }) {
   }
 
   const { address: resolverAddress } = await getResolverWalletInfo();
+  const treasuryAddress = parseAddress(
+    getTreasuryAddress(resolverAddress.toString()),
+  );
   const nowSec = Math.floor(Date.now() / 1000);
   const marketId = BigInt(Date.now());
   const deploymentSalt = marketId;
@@ -180,6 +183,7 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec }) {
   const intent = createCreateMarketIntent({
     ownerAddress: owner,
     resolverAddress,
+    treasuryAddress,
     deploymentSalt,
     marketId,
     assetId: asset,
@@ -207,6 +211,7 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec }) {
     resolveAt,
     ownerAddress: owner.toString(),
     resolverAddress: resolverAddress.toString(),
+    treasuryAddress: treasuryAddress.toString(),
   };
 
   reservePendingCreate(draft);

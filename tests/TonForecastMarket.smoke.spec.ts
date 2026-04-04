@@ -21,12 +21,14 @@ describe('TonForecastMarket smoke', () => {
 
         const owner = await blockchain.treasury('owner');
         const resolver = await blockchain.treasury('resolver');
+        const treasury = await blockchain.treasury('treasury');
 
         const contract = blockchain.openContract(
             TonForecastMarket.createFromConfig(
                 {
                     ownerAddress: owner.address,
                     resolverAddress: resolver.address,
+                    treasuryAddress: treasury.address,
                     deploymentSalt: 1n,
                 },
                 code,
@@ -59,9 +61,11 @@ describe('TonForecastMarket smoke', () => {
         });
 
         const state = await contract.getMarketState();
+        const config = await contract.getMarketConfig();
         expect(state.marketId).toBe(1n);
         expect(state.assetIdText).toBe('TON');
         expect(state.threshold).toBe(toPrice6('3.42'));
         expect(state.status).toBe(STATUS_OPEN);
+        expect(config.treasuryAddress.toString()).toBe(treasury.address.toString());
     });
 });

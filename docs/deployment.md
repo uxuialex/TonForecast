@@ -41,6 +41,8 @@ The current [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) do
 4. remove stale `ton-forecast-api` containers
 5. rebuild and recreate `api`
 6. recreate `miniapp`
+7. smoke-check `/`, `/api/runtime/health`, `/api/prices`, and `/api/markets?status=OPEN`
+8. rollback to the previous commit if those checks fail
 
 That split is intentional. Recreating `miniapp` after `api` avoids stale nginx upstream state inside Docker.
 
@@ -78,9 +80,13 @@ Then fill:
 
 - `RESOLVER_MNEMONIC`
 - `RESOLVER_WALLET_VERSION`
+- `TREASURY_ADDRESS`
 - `TON_API_ENDPOINT`
 - `TON_API_KEY` or `TONCENTER_API_KEY`
+- `TON_API_ENDPOINTS`
 - `CMC_API_KEY`
+- `ADMIN_TOKEN`
+- `ADMIN_ALLOWED_WALLETS`
 
 ### 3. Start The Stack
 
@@ -112,14 +118,17 @@ After deploy, these checks should work on the VPS:
 
 ```bash
 curl -I http://127.0.0.1:3010
+curl http://127.0.0.1:3010/api/runtime/health
 curl http://127.0.0.1:3010/api/prices
 curl "http://127.0.0.1:3010/api/markets?status=OPEN"
+curl "http://127.0.0.1:3010/api/my-markets?userAddress=0:..."
 ```
 
 And from outside:
 
 ```bash
 curl -I https://app.your-domain.com
+curl https://app.your-domain.com/api/runtime/health
 curl https://app.your-domain.com/api/prices
 ```
 

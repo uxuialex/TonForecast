@@ -334,3 +334,9 @@ export function getAdminAllowedWallets() {
   const configured = readEnvList("ADMIN_ALLOWED_WALLETS");
   return configured.length ? configured : [...DEFAULT_ADMIN_ALLOWED_WALLETS];
 }
+
+export function getTreasuryAddress(fallbackAddress = "") {
+  loadLocalEnv();
+  const configured = process.env.TREASURY_ADDRESS?.trim();
+  return configured || String(fallbackAddress ?? "").trim();
+}

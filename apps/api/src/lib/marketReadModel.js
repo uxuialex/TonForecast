@@ -300,6 +300,7 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec, options = {}) 
       contractAddress: record.contractAddress,
       ownerAddress: record.ownerAddress,
       resolverAddress: record.resolverAddress,
+      treasuryAddress: record.treasuryAddress ?? record.resolverAddress,
       contractVersion: record.contractVersion ?? null,
       contractCodeHash: record.contractCodeHash ?? null,
       contractCodeHashBase64: record.contractCodeHashBase64 ?? null,

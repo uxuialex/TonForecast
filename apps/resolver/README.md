@@ -6,6 +6,7 @@ Current production path:
 
 - create a dedicated resolver wallet
 - deploy market contract with that wallet set as `resolverAddress`
+- set a separate `treasuryAddress` for protocol fees when creating new markets
 - run the auto-resolver with the resolver wallet mnemonic in env
 - the worker polls `resolve_time`, fetches live price from STON API, and sends `resolve_market` automatically
 

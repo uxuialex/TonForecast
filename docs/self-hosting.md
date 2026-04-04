@@ -4,13 +4,14 @@ This document is for anyone who wants to fork TonForecast and run their own vers
 
 ## 1. What You Need Outside The Repository
 
-You need five external pieces:
+You need six external pieces:
 
 1. A public HTTPS domain for the Mini App
 2. A Telegram bot that opens that domain as a Web App
 3. A dedicated TON wallet for the resolver
-4. A TON JSON-RPC endpoint
-5. A CoinMarketCap API key if you want TON pricing from CMC
+4. A treasury wallet address for protocol fees
+5. A TON JSON-RPC endpoint
+6. A CoinMarketCap API key if you want TON pricing from CMC
 
 The repository gives you the app, API, contract, scripts, and deploy workflow. It does not include a Telegram bot backend.
 
@@ -63,14 +64,22 @@ Copy [`.env.example`](../.env.example) to `.env.local` and fill it.
 | --- | --- | --- | --- | --- |
 | `RESOLVER_MNEMONIC` | Yes | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js), [scripts/autoResolveTonForecastMarket.ts](../scripts/autoResolveTonForecastMarket.ts) | 24-word seed phrase for the resolver wallet | Create a dedicated TON wallet in Tonkeeper or another TON wallet app and export its seed phrase |
 | `RESOLVER_WALLET_VERSION` | Yes | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Wallet contract version used to derive the resolver wallet | Use `v5r1` for Tonkeeper-created wallets |
-| `TON_API_ENDPOINT` | Yes | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | TON JSON-RPC endpoint for onchain reads | Toncenter or another TON RPC provider |
+| `TREASURY_ADDRESS` | Recommended | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js), [apps/api/src/lib/marketActions.js](../apps/api/src/lib/marketActions.js), [contracts/ton_forecast_market.tolk](../contracts/ton_forecast_market.tolk) | Fee receiver for newly created markets. If omitted, new markets fall back to the resolver wallet for backward compatibility. | Any TON wallet address you control for fee collection |
+| `TON_API_ENDPOINT` | Yes | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Primary TON JSON-RPC endpoint for onchain reads | Toncenter or another TON RPC provider |
 | `TON_API_KEY` or `TONCENTER_API_KEY` | Recommended | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Higher rate limits on TON RPC | Your TON RPC provider dashboard |
+| `TON_API_ENDPOINTS` | Recommended | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Comma-separated TON RPC failover pool | Toncenter plus one or more backup providers |
+| `TON_API_KEYS` | Optional | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Comma-separated API keys aligned with `TON_API_ENDPOINTS` | Your TON RPC provider dashboards |
+| `TON_RPC_FAILURE_THRESHOLD` | Optional | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Retryable failures allowed before a provider is cooled down | Usually keep the default |
+| `TON_RPC_COOLDOWN_MS` | Optional | [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | How long a failed RPC provider stays out of rotation | Usually keep the default |
 | `CMC_API_KEY` | Recommended | [apps/api/src/lib/stonApi.js](../apps/api/src/lib/stonApi.js), [scripts/lib/ston.ts](../scripts/lib/ston.ts) | TON quote source via CoinMarketCap | CoinMarketCap API account |
 | `RESOLVER_POLL_INTERVAL_MS` | Optional | [scripts/autoResolveTonForecastMarket.ts](../scripts/autoResolveTonForecastMarket.ts) | How often the resolver script polls when waiting | Usually keep the default |
+| `ADMIN_TOKEN` | Recommended | [apps/api/src/server.js](../apps/api/src/server.js), [apps/miniapp/app.js](../apps/miniapp/app.js) | Secret required for admin actions | Generate a long random secret on the server |
+| `ADMIN_ALLOWED_WALLETS` | Recommended | [apps/api/src/server.js](../apps/api/src/server.js), [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Comma-separated wallet allowlist for admin mode visibility | Wallet addresses you control |
 
 Operational note:
 
-- The resolver wallet needs a small TON balance because it sends `resolve_market` transactions and receives protocol fees.
+- The resolver wallet needs a small TON balance because it sends `resolve_market` transactions.
+- With `TREASURY_ADDRESS` configured, protocol fees go to treasury instead of the resolver wallet.
 
 ## 4. Local Run
 
@@ -102,6 +111,8 @@ Useful checks:
 ```bash
 curl http://127.0.0.1:3010/api/prices
 curl "http://127.0.0.1:3010/api/markets?status=OPEN"
+curl "http://127.0.0.1:3010/api/my-markets?userAddress=0:..."
+curl http://127.0.0.1:3010/api/runtime/health
 curl http://127.0.0.1:3010/tonconnect-manifest.json
 ```
 
@@ -216,6 +227,11 @@ docker compose up -d --build
 
 After that, every push to `main` will run the GitHub Actions deploy workflow.
 
+Admin note:
+
+- admin controls inside the Mini App are shown only for wallets in `ADMIN_ALLOWED_WALLETS`
+- admin actions still require `ADMIN_TOKEN`
+
 ## 8. Telegram Bot Setup
 
 The repo does not ship bot code, but the Mini App works with any Telegram bot that opens your public HTTPS URL.
@@ -256,6 +272,20 @@ Relevant files:
 - [apps/api/src/lib/tonForecastMarket.js](../apps/api/src/lib/tonForecastMarket.js)
 - [apps/api/src/lib/marketActions.js](../apps/api/src/lib/marketActions.js)
 - [apps/api/src/lib/marketReadModel.js](../apps/api/src/lib/marketReadModel.js)
+
+### Fee Receiver Looks Wrong
+
+New markets bake the treasury address into contract storage when they are created.
+
+What to do:
+
+- set `TREASURY_ADDRESS` before creating new markets
+- remember that changing `.env.local` does not retroactively change already deployed contracts
+
+Relevant files:
+
+- [contracts/ton_forecast_market.tolk](../contracts/ton_forecast_market.tolk)
+- [apps/api/src/lib/marketActions.js](../apps/api/src/lib/marketActions.js)
 
 ### Telegram Shows Old Frontend
 

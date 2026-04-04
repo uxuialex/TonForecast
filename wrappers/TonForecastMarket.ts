@@ -43,6 +43,14 @@ export const OP_CLAIM_REWARD = 0x3b4f6c92;
 export type TonForecastMarketConfig = {
     ownerAddress: Address;
     resolverAddress: Address;
+    treasuryAddress: Address;
+    deploymentSalt: bigint;
+};
+
+export type MarketConfigState = {
+    ownerAddress: Address;
+    resolverAddress: Address;
+    treasuryAddress: Address;
     deploymentSalt: bigint;
 };
 
@@ -312,6 +320,9 @@ export function tonForecastMarketConfigToCell(config: TonForecastMarketConfig): 
     if (isZeroAddress(config.resolverAddress)) {
         throw new Error('resolverAddress must not be zero address');
     }
+    if (isZeroAddress(config.treasuryAddress)) {
+        throw new Error('treasuryAddress must not be zero address');
+    }
 
     const marketMeta = beginCell()
         .storeUint(0, 64)
@@ -333,6 +344,7 @@ export function tonForecastMarketConfigToCell(config: TonForecastMarketConfig): 
     return beginCell()
         .storeAddress(config.ownerAddress)
         .storeAddress(config.resolverAddress)
+        .storeAddress(config.treasuryAddress)
         .storeUint(config.deploymentSalt, 64)
         .storeRef(marketMeta)
         .storeRef(marketRuntime)
@@ -486,6 +498,17 @@ export class TonForecastMarket implements Contract {
             yesAmount: result.stack.readBigNumber(),
             noAmount: result.stack.readBigNumber(),
             claimed: result.stack.readBoolean(),
+        };
+    }
+
+    async getMarketConfig(provider: ContractProvider): Promise<MarketConfigState> {
+        const result = await provider.get('get_market_config', []);
+
+        return {
+            ownerAddress: result.stack.readAddress(),
+            resolverAddress: result.stack.readAddress(),
+            treasuryAddress: result.stack.readAddress(),
+            deploymentSalt: result.stack.readBigNumber(),
         };
     }
 }

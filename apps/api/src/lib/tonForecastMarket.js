@@ -54,7 +54,7 @@ const buildArtifactPath = path.resolve(
 const buildArtifact = JSON.parse(fs.readFileSync(buildArtifactPath, "utf8"));
 const codeCell = Cell.fromBoc(Buffer.from(buildArtifact.hex, "hex"))[0];
 
-export const TON_FORECAST_MARKET_CONTRACT_VERSION = "v2-uncontested-draw";
+export const TON_FORECAST_MARKET_CONTRACT_VERSION = "v3-treasury";
 export const TON_FORECAST_MARKET_CODE_HASH = buildArtifact.hash;
 export const TON_FORECAST_MARKET_CODE_HASH_BASE64 = buildArtifact.hashBase64;
 
@@ -247,15 +247,19 @@ export function outcomeToLabel(outcome) {
   }
 }
 
-function createConfigCell({ ownerAddress, resolverAddress, deploymentSalt }) {
+function createConfigCell({ ownerAddress, resolverAddress, treasuryAddress, deploymentSalt }) {
   const owner = parseAddress(ownerAddress);
   const resolver = parseAddress(resolverAddress);
+  const treasury = parseAddress(treasuryAddress);
 
   if (isZeroAddress(owner)) {
     throw new Error("ownerAddress must not be zero address");
   }
   if (isZeroAddress(resolver)) {
     throw new Error("resolverAddress must not be zero address");
+  }
+  if (isZeroAddress(treasury)) {
+    throw new Error("treasuryAddress must not be zero address");
   }
 
   const marketMeta = beginCell()
@@ -278,6 +282,7 @@ function createConfigCell({ ownerAddress, resolverAddress, deploymentSalt }) {
   return beginCell()
     .storeAddress(owner)
     .storeAddress(resolver)
+    .storeAddress(treasury)
     .storeUint(BigInt(deploymentSalt), 64)
     .storeRef(marketMeta)
     .storeRef(marketRuntime)
@@ -323,6 +328,7 @@ function toBase64(cell) {
 export function createCreateMarketIntent({
   ownerAddress,
   resolverAddress,
+  treasuryAddress,
   deploymentSalt,
   marketId,
   assetId,
@@ -334,6 +340,7 @@ export function createCreateMarketIntent({
   const data = createConfigCell({
     ownerAddress,
     resolverAddress,
+    treasuryAddress,
     deploymentSalt,
   });
   const init = {

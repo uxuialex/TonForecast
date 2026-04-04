@@ -2,15 +2,16 @@
 
 ## Scope
 
-MVP contract supports only:
+Current contract supports:
 
 - objective short-term price markets
 - assets: `TON`, `STON`, `tsTON`, `UTYA`, `MAJOR`, `REDO`
-- durations: `30s`, `60s`
-- market status transitions: `OPEN -> LOCKED -> RESOLVED_*`
-- claim by winning side only
+- durations configured offchain by the app and backend
+- market status transitions: `OPEN -> LOCKED -> RESOLVED_YES | RESOLVED_NO | RESOLVED_DRAW`
+- claim by winners or refund claim on `DRAW`
+- protocol fee: `2%` of winnings only
 
-No disputes, arbitration, appeals, AMM, or outcome tokens.
+No disputes, arbitration, appeals, AMM, or transferable outcome tokens.
 
 ## Language
 
@@ -18,11 +19,13 @@ Implementation target: `Tolk`.
 
 ## Core State
 
-### Market
+### Market Storage
 
+- `owner_address`
+- `resolver_address`
+- `treasury_address`
+- `deployment_salt`
 - `market_id`
-- `owner`
-- `resolver`
 - `asset_id`
 - `threshold`
 - `direction`
@@ -34,7 +37,7 @@ Implementation target: `Tolk`.
 - `final_price`
 - `resolved_outcome`
 
-### Position
+### Position Storage
 
 Per-user stake tracked inside market state:
 
@@ -60,7 +63,7 @@ Rules:
 
 - callable by owner only
 - can be executed only once
-- owner and resolver addresses must be non-zero
+- owner, resolver, and treasury addresses must be non-zero
 - `asset_id` is a curated token id encoded as base-256 integer
 - pools start at zero
 - market enters `OPEN`
@@ -74,15 +77,15 @@ Inputs:
 Rules:
 
 - market must be `OPEN`
-- current time must be before `closes_at`
+- current time must be before `close_time`
 - attached value must be at least `0.001 TON`
 - sender must not already hold a `no_amount`
-- increases `pool_yes`
+- increases `yes_pool`
 - increases sender `yes_amount`
 
 ### `bet_no`
 
-Same as `bet_yes`, but for `pool_no` and sender must not already hold a `yes_amount`.
+Same as `bet_yes`, but for `no_pool` and sender must not already hold a `yes_amount`.
 
 ### `resolve_market`
 
@@ -97,8 +100,9 @@ Rules:
 - market must be `LOCKED`
 - `now >= resolve_time`
 - market must not already be resolved
-- both `yes_pool` and `no_pool` must be non-zero
-- sets final outcome to `RESOLVED_YES` or `RESOLVED_NO`
+- if one side has zero liquidity, the market resolves to `DRAW`
+- if `final_price == threshold`, the market resolves to `DRAW`
+- otherwise the contract resolves to `YES` or `NO`
 
 ### `claim_reward`
 
@@ -109,29 +113,71 @@ Inputs:
 Rules:
 
 - market must already be resolved
-- sender must be on winning side
+- sender must have a claimable stake
 - sender must not have claimed yet
-- payout = `user_winning_stake / total_winning_pool * total_pool`
+- `DRAW` returns the sender's full original stake
+- non-draw payout is proportional:
+  - `gross_payout = user_winning_stake / total_winning_pool * total_pool`
+  - `gross_winnings = gross_payout - user_winning_stake`
+  - `protocol_fee = 2% of gross_winnings`
+  - `net_payout = gross_payout - protocol_fee`
+- protocol fee is sent to `treasury_address`
 
 ## Status Rules
 
 - `UNINITIALIZED`: market not created yet
-- `OPEN`: accepts bets
+- `OPEN`: accepts new bets
 - `LOCKED`: betting closed, waiting for resolver
 - `RESOLVED_YES`: winner side is yes
 - `RESOLVED_NO`: winner side is no
+- `RESOLVED_DRAW`: refund outcome
 
 `LOCKED` can be derived automatically when current time passes `close_time`.
 
+## Getters
+
+### `get_market_state`
+
+Returns:
+
+- `market_id`
+- `asset_id`
+- `threshold`
+- `direction`
+- `close_time`
+- `resolve_time`
+- `status`
+- `yes_pool`
+- `no_pool`
+- `final_price`
+- `resolved_outcome`
+
+### `get_user_stake`
+
+Returns:
+
+- `yes_amount`
+- `no_amount`
+- `claimed`
+
+### `get_market_config`
+
+Returns:
+
+- `owner_address`
+- `resolver_address`
+- `treasury_address`
+- `deployment_salt`
+
 ## Security Notes
 
-- resolver must be a dedicated wallet, not creator wallet
+- resolver should be a dedicated hot wallet used only for settlement
+- treasury should be a separate fee receiver wallet
 - claim must be idempotent
-- contract must reject zero-value claims
-- contract must not allow resolution twice
-- contract must not allow bets after close
+- contract must reject double resolution
+- contract must reject opposite-side betting from the same wallet
 
 ## Encoding Notes
 
-- `asset_id` should be encoded as `uint64` using `stringToBase256()`
-- `threshold` and `final_price` should be stored as fixed-point price integers with 6 decimals
+- `asset_id` is encoded as `uint64` using `stringToBase256()`
+- `threshold` and `final_price` are fixed-point integers with 6 decimals

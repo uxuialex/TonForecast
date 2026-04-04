@@ -1160,6 +1160,13 @@ select:focus {
   margin-bottom: 12px;
 }
 
+.positions-toolbar__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .positions-heading {
   font-size: 18px;
   font-weight: 600;
@@ -1189,6 +1196,12 @@ select:focus {
   border-radius: 999px;
   font-size: 12px;
   line-height: 1;
+}
+
+.positions-refresh-button.is-active {
+  color: var(--accent);
+  border-color: rgba(79, 172, 254, 0.26);
+  background: rgba(79, 172, 254, 0.12);
 }
 
 .positions-refresh-button.is-busy {

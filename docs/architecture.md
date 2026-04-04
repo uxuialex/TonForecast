@@ -20,8 +20,10 @@ flowchart LR
     F --> A["Backend API: apps/api"]
     F --> W["TON Connect Wallet"]
     A --> S["STON.fi API"]
+    A --> Q["Runtime store + queue: SQLite + resolver worker"]
     A --> R["Resolver bootstrap: apps/api/src/lib/resolverAutomation.js"]
     R --> S
+    R --> Q
     R --> C["TON Contract"]
     F --> C
 ```
@@ -51,7 +53,9 @@ Responsible for:
 - caching STON.fi data
 - serving frontend-friendly read models
 - reducing client-side API coupling
-- optional indexing of market events
+- maintaining the runtime SQLite store
+- indexing user markets and user position snapshots
+- exposing admin and runtime health routes
 
 For MVP this can stay very small. It is not the source of truth for bets or outcomes.
 
@@ -67,6 +71,7 @@ Responsible for:
 Current production path is:
 
 - bootstrap in [apps/api/src/lib/resolverAutomation.js](../apps/api/src/lib/resolverAutomation.js)
+- worker queue in [apps/api/src/lib/marketAutoResolver.js](../apps/api/src/lib/marketAutoResolver.js)
 - resolver script in [scripts/autoResolveTonForecastMarket.ts](../scripts/autoResolveTonForecastMarket.ts)
 
 This runtime uses a privileged resolver wallet.
@@ -92,12 +97,13 @@ The contract is the source of truth for settlement and claims.
 - `LOCKED`: betting closed, waiting for resolver
 - `RESOLVED_YES`: settled to yes
 - `RESOLVED_NO`: settled to no
+- `RESOLVED_DRAW`: refunded / no winner
 
 Position state is derived per user:
 
 - `OPEN`
+- `CLAIMABLE`
 - `LOST`
-- `WON`
 - `CLAIMED`
 
 ### Suggested onchain fields
@@ -114,6 +120,7 @@ Position state is derived per user:
 - `status`
 - `finalPrice`
 - `resolvedAt`
+- `treasuryAddress`
 
 ### User position fields
 
@@ -146,3 +153,10 @@ The first full end-to-end slice should be:
 7. User claims payout.
 
 Anything not needed for this slice is secondary.
+
+## Current Runtime Notes
+
+- protocol fees are `2%` of winnings and are sent to the treasury address stored in each market contract
+- new markets use the contract version and code hash embedded in [apps/api/src/lib/tonForecastMarket.js](../apps/api/src/lib/tonForecastMarket.js)
+- legacy markets are detectable in the read model and can be hidden or flagged through the admin tools
+- runtime health, metrics, and audit log are exposed by [apps/api/src/server.js](../apps/api/src/server.js)

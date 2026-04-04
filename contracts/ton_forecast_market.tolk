@@ -75,6 +75,7 @@ struct MarketRuntime {
 struct Storage {
     ownerAddress: address;
     resolverAddress: address;
+    treasuryAddress: address;
     deploymentSalt: uint64;
     marketMeta: Cell<MarketMeta>;
     marketRuntime: Cell<MarketRuntime>;
@@ -90,15 +91,18 @@ fun Storage.save(self) {
 }
 
 // Helper for wrappers/deploy scripts to build initial storage data.
-fun createInitialStorage(ownerAddress: address, resolverAddress: address, deploymentSalt: uint64): Storage {
+fun createInitialStorage(ownerAddress: address, resolverAddress: address, treasuryAddress: address, deploymentSalt: uint64): Storage {
     val (_, ownerHash) = ownerAddress.getWorkchainAndHash();
     val (_, resolverHash) = resolverAddress.getWorkchainAndHash();
+    val (_, treasuryHash) = treasuryAddress.getWorkchainAndHash();
     assert (ownerHash != 0) throw ERR_BAD_ADDRESS;
     assert (resolverHash != 0) throw ERR_BAD_ADDRESS;
+    assert (treasuryHash != 0) throw ERR_BAD_ADDRESS;
 
     return {
         ownerAddress,
         resolverAddress,
+        treasuryAddress,
         deploymentSalt,
         marketMeta: MarketMeta {
             marketId: 0,
@@ -231,9 +235,11 @@ fun onInternalMessage(in: InMessage) {
             var runtime = storage.getMarketRuntime();
             val (_, ownerHash) = storage.ownerAddress.getWorkchainAndHash();
             val (_, resolverHash) = storage.resolverAddress.getWorkchainAndHash();
+            val (_, treasuryHash) = storage.treasuryAddress.getWorkchainAndHash();
 
             assert (ownerHash != 0) throw ERR_BAD_ADDRESS;
             assert (resolverHash != 0) throw ERR_BAD_ADDRESS;
+            assert (treasuryHash != 0) throw ERR_BAD_ADDRESS;
             assert (in.senderAddress == storage.ownerAddress) throw ERR_NOT_OWNER;
             assert (runtime.status == STATUS_UNINITIALIZED) throw ERR_ALREADY_CREATED;
             assert (msg.direction == DIRECTION_ABOVE || msg.direction == DIRECTION_BELOW) throw ERR_BAD_DIRECTION;
@@ -391,7 +397,7 @@ fun onInternalMessage(in: InMessage) {
                 val feeMsg = createMessage({
                     bounce: BounceMode.NoBounce,
                     value: protocolFee,
-                    dest: storage.resolverAddress,
+                    dest: storage.treasuryAddress,
                     body: beginCell().endCell(),
                 });
                 feeMsg.send(SEND_MODE_PAY_GAS_SEPARATELY);
@@ -441,4 +447,14 @@ get fun get_user_stake(userAddress: address): (coins, coins, bool) {
     val storage = lazy Storage.load();
     val stake = storage.getUserStake(userAddress);
     return (stake.yesAmount, stake.noAmount, stake.claimed);
+}
+
+get fun get_market_config(): (address, address, address, uint64) {
+    val storage = lazy Storage.load();
+    return (
+        storage.ownerAddress,
+        storage.resolverAddress,
+        storage.treasuryAddress,
+        storage.deploymentSalt,
+    );
 }

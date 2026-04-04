@@ -13,6 +13,10 @@ export async function run(provider: NetworkProvider) {
         'Resolver address',
         senderAddress,
     );
+    const treasuryAddress = await ui.inputAddress(
+        'Treasury address',
+        senderAddress,
+    );
     const defaultSalt = BigInt(Math.floor(Date.now() / 1000));
     const deploymentSaltInput = await ui.input(
         `Deployment salt (default: ${defaultSalt.toString()})`,
@@ -26,6 +30,7 @@ export async function run(provider: NetworkProvider) {
             {
                 ownerAddress: senderAddress,
                 resolverAddress,
+                treasuryAddress,
                 deploymentSalt,
             },
             await compile('TonForecastMarket'),
@@ -38,5 +43,6 @@ export async function run(provider: NetworkProvider) {
     ui.write(`TonForecastMarket deployed at: ${contract.address.toString()}`);
     ui.write(`Owner: ${senderAddress.toString()}`);
     ui.write(`Resolver: ${resolverAddress.toString()}`);
+    ui.write(`Treasury: ${treasuryAddress.toString()}`);
     ui.write(`Deployment salt: ${deploymentSalt.toString()}`);
 }

@@ -21,6 +21,7 @@ describe('TonForecastMarket happy path', () => {
     let blockchain: Blockchain;
     let owner: SandboxContract<TreasuryContract>;
     let resolver: SandboxContract<TreasuryContract>;
+    let treasury: SandboxContract<TreasuryContract>;
     let yesBettor: SandboxContract<TreasuryContract>;
     let noBettor: SandboxContract<TreasuryContract>;
     let contract: SandboxContract<TonForecastMarket>;
@@ -33,6 +34,7 @@ describe('TonForecastMarket happy path', () => {
         blockchain = await Blockchain.create();
         owner = await blockchain.treasury('owner');
         resolver = await blockchain.treasury('resolver');
+        treasury = await blockchain.treasury('treasury');
         yesBettor = await blockchain.treasury('yes-bettor');
         noBettor = await blockchain.treasury('no-bettor');
 
@@ -41,6 +43,7 @@ describe('TonForecastMarket happy path', () => {
                 {
                     ownerAddress: owner.address,
                     resolverAddress: resolver.address,
+                    treasuryAddress: treasury.address,
                     deploymentSalt: 2n,
                 },
                 code,
@@ -62,7 +65,9 @@ describe('TonForecastMarket happy path', () => {
 
     it('runs create -> bet yes/no -> resolve -> claim', async () => {
         let state = await contract.getMarketState();
+        const config = await contract.getMarketConfig();
         expect(buildMarketQuestion(state)).toBe('Will TON be above $3.420000?');
+        expect(config.treasuryAddress.toString()).toBe(treasury.address.toString());
 
         await contract.sendBetYes(yesBettor.getSender(), toNano('10'));
         await contract.sendBetNo(noBettor.getSender(), toNano('5'));
@@ -116,7 +121,7 @@ describe('TonForecastMarket happy path', () => {
         });
         expect(claimResult.transactions).toHaveTransaction({
             from: contract.address,
-            to: resolver.address,
+            to: treasury.address,
             success: true,
             value: toNano('0.1'),
         });
@@ -179,6 +184,18 @@ describe('TonForecastMarket happy path', () => {
         expect(yesPosition.positionStatus).toBe('CLAIMABLE');
         expect(yesPosition.payout).toBe(toNano('1'));
         expect(yesPosition.protocolFee).toBe(0n);
+
+        const claimResult = await contract.sendClaimReward(
+            yesBettor.getSender(),
+            toNano('0.05'),
+        );
+
+        expect(claimResult.transactions).toHaveTransaction({
+            from: contract.address,
+            to: yesBettor.address,
+            success: true,
+            value: toNano('1'),
+        });
     });
 
     it('refunds both sides when final price equals threshold', async () => {
