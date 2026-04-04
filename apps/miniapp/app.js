@@ -204,7 +204,7 @@ function switchPanel(nextPanelName) {
   }
 
   if (nextPanelName === "profile" && state.wallet && !state.positionsLoaded) {
-    loadPositions({ fresh: true, full: true });
+    primePositions();
   }
 }
 
@@ -425,9 +425,9 @@ function formatLongRemaining(timestampSec) {
   let diff = Math.max(0, timestampSec - Math.floor(Date.now() / 1000));
   const parts = [];
   const units = [
-    ["month", 30 * 24 * 60 * 60],
-    ["day", 24 * 60 * 60],
-    ["hour", 60 * 60],
+    ["mo", 30 * 24 * 60 * 60],
+    ["d", 24 * 60 * 60],
+    ["h", 60 * 60],
     ["min", 60],
   ];
 
@@ -440,13 +440,7 @@ function formatLongRemaining(timestampSec) {
       continue;
     }
     diff -= value * size;
-    const suffix =
-      label === "min"
-        ? "min"
-        : value === 1
-          ? label
-          : `${label}s`;
-    parts.push(`${value} ${suffix}`);
+    parts.push(`${value} ${label}`);
   }
 
   return parts.join(" ") || "0 min";
@@ -460,7 +454,7 @@ function formatRemainingTime(timestampSec) {
   if (diff >= 60 * 60) {
     const hours = Math.floor(diff / 3600);
     const minutes = Math.floor((diff % 3600) / 60);
-    return `${hours} ${hours === 1 ? "hour" : "hours"} ${minutes} min`;
+    return `${hours} h ${minutes} min`;
   }
   return formatCountdown(timestampSec);
 }
@@ -593,7 +587,7 @@ function syncWalletState(wallet) {
     setCreateNotice(null);
   }
   if (getActivePanelName() === "profile") {
-    loadPositions({ fresh: true, full: true });
+    primePositions();
   }
   if (getActivePanelName() === "create") {
     loadCreateContext();
@@ -971,11 +965,14 @@ async function loadPositions(options = {}) {
 
   state.positionsLoading = true;
   syncPositionsRefreshButton();
-  positionsFeedbackEl.textContent = state.positions.length
-    ? "Refreshing positions..."
-    : "Loading positions...";
-  positionsFeedbackEl.classList.add("is-loading");
-  if (!state.positions.length) {
+  const isSilent = options.silent === true && state.positions.length > 0;
+  if (!isSilent) {
+    positionsFeedbackEl.textContent = state.positions.length
+      ? "Refreshing positions..."
+      : "Loading positions...";
+    positionsFeedbackEl.classList.add("is-loading");
+  }
+  if (!state.positions.length && !isSilent) {
     renderPositionSkeletons();
   }
 
@@ -987,25 +984,40 @@ async function loadPositions(options = {}) {
     state.positionsLoaded = true;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
-    positionsFeedbackEl.classList.remove("is-loading");
-    positionsFeedbackEl.textContent = state.positions.length
-      ? `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`
-      : "No positions yet.";
+    if (!isSilent) {
+      positionsFeedbackEl.classList.remove("is-loading");
+      positionsFeedbackEl.textContent = state.positions.length
+        ? `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`
+        : "No positions yet.";
+    }
     renderPositions(state.positions);
   } catch (error) {
-    state.positionsLoaded = false;
+    state.positionsLoaded = state.positions.length > 0;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
-    positionsFeedbackEl.classList.remove("is-loading");
-    positionsFeedbackEl.textContent = state.positions.length
-      ? `Couldn't refresh positions right now. Showing last known state.`
-      : `Failed to load positions: ${error.message}`;
+    if (!isSilent) {
+      positionsFeedbackEl.classList.remove("is-loading");
+      positionsFeedbackEl.textContent = state.positions.length
+        ? `Couldn't refresh positions right now. Showing last known state.`
+        : `Failed to load positions: ${error.message}`;
+    }
     if (!state.positions.length) {
       positionsListEl.innerHTML = "";
     } else {
       renderPositions(state.positions);
     }
   }
+}
+
+async function primePositions() {
+  await loadPositions({ fresh: true });
+  if (!state.wallet) {
+    return;
+  }
+
+  loadPositions({ fresh: true, full: true, silent: true }).catch((error) => {
+    console.warn("background full positions refresh failed", error);
+  });
 }
 
 async function loadCreateContext() {
