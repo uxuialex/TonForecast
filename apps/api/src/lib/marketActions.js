@@ -1,4 +1,10 @@
-import { SUPPORTED_ASSETS, formatAssetUsd, formatUsd } from "../../../../packages/shared/src/index.js";
+import {
+  MARKET_DURATIONS,
+  SUPPORTED_ASSETS,
+  formatAssetUsd,
+  formatDurationLabel as formatSharedDurationLabel,
+  formatUsd,
+} from "../../../../packages/shared/src/index.js";
 import { toNano } from "@ton/core";
 import {
   consumePendingCreate,
@@ -35,7 +41,7 @@ import {
 import { getAssetSnapshotMap } from "./stonApi.js";
 import { scheduleAutoResolve } from "./resolverAutomation.js";
 
-const SUPPORTED_DURATIONS = [300, 900, 1800, 3600, 86400, 259200, 604800, 2592000];
+const SUPPORTED_DURATIONS = MARKET_DURATIONS;
 const CREATE_RESOLVE_DELAY_SEC = 10;
 const TRANSACTION_VALIDITY_MS = 5 * 60 * 1000;
 
@@ -63,30 +69,13 @@ function ensureSupportedAsset(asset) {
 function ensureSupportedDuration(durationSec) {
   const numeric = Number(durationSec);
   if (!SUPPORTED_DURATIONS.includes(numeric)) {
-    throw badRequest("durationSec must be one of 300, 900, 1800, 3600, 86400, 259200, 604800 or 2592000");
+    throw badRequest(`durationSec must be one of ${SUPPORTED_DURATIONS.join(", ")}`);
   }
   return numeric;
 }
 
 function formatDurationLabel(durationSec) {
-  const numeric = Number(durationSec ?? 0);
-  if (numeric === 86400) {
-    return "1 day";
-  }
-  if (numeric === 259200) {
-    return "3 days";
-  }
-  if (numeric === 604800) {
-    return "1 week";
-  }
-  if (numeric === 2592000) {
-    return "1 month";
-  }
-  if (numeric % 3600 === 0) {
-    const hours = numeric / 3600;
-    return `${hours} ${hours === 1 ? "hour" : "hours"}`;
-  }
-  return `${numeric / 60} min`;
+  return formatSharedDurationLabel(durationSec);
 }
 
 function normalizeSide(side) {

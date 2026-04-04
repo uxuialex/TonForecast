@@ -332,6 +332,11 @@ main {
   z-index: 1;
 }
 
+.panel[data-panel="create"],
+.panel[data-panel="profile"] {
+  padding-top: 12px;
+}
+
 .panel {
   display: none;
   opacity: 0;
@@ -573,6 +578,12 @@ main {
   transition:
     opacity 0.18s ease,
     transform 0.18s ease;
+}
+
+.duration-picker__menu {
+  max-height: min(320px, calc(100vh - 220px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .form-picker__menu.is-visible {
@@ -1331,27 +1342,23 @@ select:focus {
   backdrop-filter: blur(32px);
   -webkit-backdrop-filter: blur(32px);
   border-top: 1px solid var(--border);
-  overflow: hidden;
 }
 
 .bottom-nav__indicator {
   position: absolute;
-  top: 8px;
-  bottom: calc(var(--safe-b) + 6px);
+  top: -1px;
   left: 0;
   width: var(--indicator-w);
-  border-radius: 18px;
-  background:
-    linear-gradient(135deg, rgba(79, 172, 254, 0.18), rgba(124, 58, 237, 0.14));
-  border: 1px solid rgba(79, 172, 254, 0.16);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 10px 26px rgba(79, 172, 254, 0.12);
+  height: 3px;
+  border-radius: 0 0 999px 999px;
+  background: linear-gradient(90deg, #4facfe, #7c3aed);
+  box-shadow: 0 0 18px rgba(79, 172, 254, 0.45);
   transform: translateX(var(--indicator-x));
   transition:
     transform 0.28s cubic-bezier(0.22, 1, 0.36, 1),
     width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 0.18s ease;
+    opacity 0.18s ease,
+    box-shadow 0.2s ease;
   pointer-events: none;
   opacity: 1;
 }
@@ -1376,7 +1383,6 @@ select:focus {
   -webkit-tap-highlight-color: transparent;
   position: relative;
   z-index: 1;
-  border-radius: 18px;
 }
 
 .tab svg {
@@ -1385,6 +1391,7 @@ select:focus {
 
 .tab.is-active {
   color: var(--accent);
+  text-shadow: 0 0 12px rgba(79, 172, 254, 0.18);
 }
 
 .tab.is-active svg {

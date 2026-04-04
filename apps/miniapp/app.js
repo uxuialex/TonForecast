@@ -372,8 +372,23 @@ function getMarketFilterLabel(value) {
 
 function formatDurationLabel(durationSec) {
   const numeric = Number(durationSec ?? 0);
+  if (numeric === 300) {
+    return "5 min";
+  }
+  if (numeric === 900) {
+    return "15 min";
+  }
+  if (numeric === 1800) {
+    return "30 min";
+  }
+  if (numeric === 3600) {
+    return "60 min";
+  }
   if (numeric === 86400) {
     return "1 day";
+  }
+  if (numeric === 172800) {
+    return "2 days";
   }
   if (numeric === 259200) {
     return "3 days";
@@ -404,6 +419,57 @@ function formatCountdown(timestampSec) {
   const minutes = String(Math.floor(diff / 60)).padStart(2, "0");
   const seconds = String(diff % 60).padStart(2, "0");
   return `${minutes}:${seconds}`;
+}
+
+function formatLongRemaining(timestampSec) {
+  let diff = Math.max(0, timestampSec - Math.floor(Date.now() / 1000));
+  const parts = [];
+  const units = [
+    ["month", 30 * 24 * 60 * 60],
+    ["day", 24 * 60 * 60],
+    ["hour", 60 * 60],
+    ["min", 60],
+  ];
+
+  for (const [label, size] of units) {
+    if (diff < size && parts.length === 0) {
+      continue;
+    }
+    const value = Math.floor(diff / size);
+    if (!value) {
+      continue;
+    }
+    diff -= value * size;
+    const suffix =
+      label === "min"
+        ? "min"
+        : value === 1
+          ? label
+          : `${label}s`;
+    parts.push(`${value} ${suffix}`);
+  }
+
+  return parts.join(" ") || "0 min";
+}
+
+function formatRemainingTime(timestampSec) {
+  const diff = Math.max(0, timestampSec - Math.floor(Date.now() / 1000));
+  if (diff >= 24 * 60 * 60) {
+    return formatLongRemaining(timestampSec);
+  }
+  if (diff >= 60 * 60) {
+    const hours = Math.floor(diff / 3600);
+    const minutes = Math.floor((diff % 3600) / 60);
+    return `${hours} ${hours === 1 ? "hour" : "hours"} ${minutes} min`;
+  }
+  return formatCountdown(timestampSec);
+}
+
+function formatMarketDateTime(timestampSec) {
+  if (!timestampSec) {
+    return "n/a";
+  }
+  return new Date(timestampSec * 1000).toLocaleString();
 }
 
 function deriveEffectiveStatus(market) {
@@ -662,7 +728,7 @@ function buildMarketStatusMeta(market) {
   if (effectiveStatus === "OPEN") {
     return {
       statusText: "Closes in",
-      statusValue: formatCountdown(market.closeAt),
+      statusValue: formatRemainingTime(market.closeAt),
     };
   }
 
@@ -670,13 +736,13 @@ function buildMarketStatusMeta(market) {
     if (market.resolveAt > nowSec) {
       return {
         statusText: "Auto-resolve in",
-        statusValue: formatCountdown(market.resolveAt),
+        statusValue: formatRemainingTime(market.resolveAt),
       };
     }
 
     return {
       statusText: "Resolve due",
-      statusValue: new Date(market.resolveAt * 1000).toLocaleTimeString(),
+      statusValue: formatMarketDateTime(market.resolveAt),
     };
   }
 
@@ -763,12 +829,12 @@ function renderMarkets(items) {
             <div><dt>Current</dt><dd>${market.currentPriceLabel}</dd></div>
             <div><dt>Duration</dt><dd>${formatDurationLabel(market.durationSec)}</dd></div>
             <div><dt data-market-status-text>${statusMeta.statusText}</dt><dd data-market-status-value>${statusMeta.statusValue}</dd></div>
-            <div><dt>Close</dt><dd>${new Date(market.closeAt * 1000).toLocaleTimeString()}</dd></div>
+            <div><dt>Close</dt><dd>${formatMarketDateTime(market.closeAt)}</dd></div>
             <div><dt>Up pool</dt><dd>${market.yesPoolLabel}</dd></div>
             <div><dt>Down pool</dt><dd>${market.noPoolLabel}</dd></div>
             <div><dt>Result</dt><dd>${market.outcomeLabel}</dd></div>
             <div><dt>Final price</dt><dd>${market.finalPriceLabel}</dd></div>
-            <div><dt>Resolve</dt><dd>${new Date(market.resolveAt * 1000).toLocaleTimeString()}</dd></div>
+            <div><dt>Resolve</dt><dd>${formatMarketDateTime(market.resolveAt)}</dd></div>
           </dl>
           <div class="card-actions">
             <button class="yes-button ${pendingBetSide === "YES" ? "is-busy" : ""}" data-action="bet" data-side="YES" ${canBet ? "" : "disabled"}>${pendingBetSide === "YES" ? "Confirming..." : buildBetButtonLabel(market, "YES")}</button>
