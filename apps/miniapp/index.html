@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260404d" />
+    <link rel="stylesheet" href="./styles.css?v=20260404e" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.0.11/dist/tonconnect-ui.min.js"></script>
   </head>
@@ -167,7 +167,12 @@
           </div>
 
           <div class="positions-section">
-            <h3 class="positions-heading">My Positions</h3>
+            <div class="positions-toolbar">
+              <h3 class="positions-heading">My Positions</h3>
+              <button id="positions-refresh-button" type="button" class="ghost-button positions-refresh-button">
+                Refresh
+              </button>
+            </div>
             <p id="positions-feedback" class="section-feedback">Connect a wallet to load positions.</p>
             <div id="positions-list" class="positions-list"></div>
           </div>
@@ -200,6 +205,6 @@
       </nav>
     </div>
 
-    <script src="./app.js?v=20260404g"></script>
+    <script src="./app.js?v=20260404h"></script>
   </body>
 </html>

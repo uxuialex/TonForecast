@@ -82,6 +82,7 @@ const marketGridEl = document.querySelector("#market-grid");
 const marketFeedbackEl = document.querySelector("#markets-feedback");
 const positionsFeedbackEl = document.querySelector("#positions-feedback");
 const positionsListEl = document.querySelector("#positions-list");
+const positionsRefreshButtonEl = document.querySelector("#positions-refresh-button");
 const marketFilterEl = document.querySelector("#market-filter");
 const marketFilterTriggerEl = document.querySelector("#market-filter-trigger");
 const marketFilterLabelEl = document.querySelector("#market-filter-label");
@@ -203,7 +204,7 @@ function switchPanel(nextPanelName) {
   }
 
   if (nextPanelName === "profile" && state.wallet && !state.positionsLoaded) {
-    loadPositions();
+    loadPositions({ fresh: true, full: true });
   }
 }
 
@@ -238,6 +239,19 @@ function clearActionFeedback() {
 
   actionFeedbackEl.textContent = "";
   actionFeedbackEl.classList.add("is-hidden");
+}
+
+function buildPositionsQuery(userAddress, options = {}) {
+  const params = new URLSearchParams({
+    userAddress,
+  });
+  if (options.fresh) {
+    params.set("fresh", "1");
+  }
+  if (options.full) {
+    params.set("full", "1");
+  }
+  return `/api/positions?${params.toString()}`;
 }
 
 function renderInlineNotice(element, notice) {
@@ -498,6 +512,7 @@ function syncWalletState(wallet) {
     positionsFeedbackEl.classList.remove("is-loading");
     positionsListEl.innerHTML =
       '<div class="position-empty">Wallet disconnected. Position feed is idle.</div>';
+    syncPositionsRefreshButton();
     renderMarkets(state.markets);
     renderPositions(state.positions);
     setCreateNotice("Connect a wallet to unlock create, bet, and claim actions.", "info");
@@ -512,12 +527,13 @@ function syncWalletState(wallet) {
     setCreateNotice(null);
   }
   if (getActivePanelName() === "profile") {
-    loadPositions();
+    loadPositions({ fresh: true, full: true });
   }
   if (getActivePanelName() === "create") {
     loadCreateContext();
   }
   renderMarkets(state.markets);
+  syncPositionsRefreshButton();
   syncCreateButtonState();
 }
 
@@ -832,10 +848,22 @@ function renderPositions(items) {
     .join("");
 }
 
-async function loadPositions() {
+function syncPositionsRefreshButton() {
+  if (!positionsRefreshButtonEl) {
+    return;
+  }
+
+  const disabled = !state.wallet || state.positionsLoading;
+  positionsRefreshButtonEl.disabled = disabled;
+  positionsRefreshButtonEl.classList.toggle("is-busy", state.positionsLoading);
+  positionsRefreshButtonEl.textContent = state.positionsLoading ? "Refreshing..." : "Refresh";
+}
+
+async function loadPositions(options = {}) {
   if (!state.wallet) {
     state.positionsLoaded = false;
     state.positionsLoading = false;
+    syncPositionsRefreshButton();
     return;
   }
 
@@ -844,6 +872,7 @@ async function loadPositions() {
   }
 
   state.positionsLoading = true;
+  syncPositionsRefreshButton();
   positionsFeedbackEl.textContent = state.positions.length
     ? "Refreshing positions..."
     : "Loading positions...";
@@ -853,11 +882,13 @@ async function loadPositions() {
   }
 
   try {
-    const userAddress = encodeURIComponent(state.wallet.account.address);
-    const payload = await requestJson(`/api/positions?userAddress=${userAddress}`);
+    const payload = await requestJson(
+      buildPositionsQuery(state.wallet.account.address, options),
+    );
     state.positions = payload.items ?? [];
     state.positionsLoaded = true;
     state.positionsLoading = false;
+    syncPositionsRefreshButton();
     positionsFeedbackEl.classList.remove("is-loading");
     positionsFeedbackEl.textContent = state.positions.length
       ? `${state.positions.length} tracked position${state.positions.length === 1 ? "" : "s"}`
@@ -866,6 +897,7 @@ async function loadPositions() {
   } catch (error) {
     state.positionsLoaded = false;
     state.positionsLoading = false;
+    syncPositionsRefreshButton();
     positionsFeedbackEl.classList.remove("is-loading");
     positionsFeedbackEl.textContent = state.positions.length
       ? `Couldn't refresh positions right now. Showing last known state.`
@@ -1026,11 +1058,16 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
   const deadlineMs = Date.now() + timeoutMs;
   while (Date.now() < deadlineMs) {
     try {
-      const positionsPayload = await requestJson(`/api/positions?userAddress=${encodeURIComponent(userAddress)}&fresh=1`);
+      const positionsPayload = await requestJson(
+        buildPositionsQuery(userAddress, { fresh: true, full: true }),
+      );
       const nextPosition = (positionsPayload.items ?? []).find((item) => item.contractAddress === contractAddress);
       if (nextPosition && Number(nextPosition.amountTon ?? 0) > previousAmountTon) {
         state.pendingBet = null;
-        await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
+        await Promise.all([
+          loadMarkets(state.activeMarketStatus),
+          loadPositions({ fresh: true, full: true }),
+        ]);
         setMarketNotice(contractAddress, "Bet confirmed onchain.", "success");
         return;
       }
@@ -1042,7 +1079,10 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
   }
 
   state.pendingBet = null;
-  await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
+  await Promise.all([
+    loadMarkets(state.activeMarketStatus),
+    loadPositions({ fresh: true, full: true }),
+  ]);
   setMarketNotice(contractAddress, "Bet sent. Position refresh may lag briefly while blockchain state propagates.", "warn");
 }
 
@@ -1109,11 +1149,16 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
   const deadlineMs = Date.now() + timeoutMs;
   while (Date.now() < deadlineMs) {
     try {
-      const positionsPayload = await requestJson(`/api/positions?userAddress=${encodeURIComponent(userAddress)}&fresh=1`);
+      const positionsPayload = await requestJson(
+        buildPositionsQuery(userAddress, { fresh: true, full: true }),
+      );
       const nextPosition = (positionsPayload.items ?? []).find((item) => item.id === positionId);
       if (nextPosition?.claimed) {
         state.pendingClaim = null;
-        await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
+        await Promise.all([
+          loadMarkets(state.activeMarketStatus),
+          loadPositions({ fresh: true, full: true }),
+        ]);
         setPositionNotice(positionId, "Claim confirmed onchain.", "success");
         return;
       }
@@ -1125,7 +1170,10 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
   }
 
   state.pendingClaim = null;
-  await Promise.all([loadMarkets(state.activeMarketStatus), loadPositions()]);
+  await Promise.all([
+    loadMarkets(state.activeMarketStatus),
+    loadPositions({ fresh: true, full: true }),
+  ]);
   setPositionNotice(positionId, "Claim sent. Wallet balance and position state may update with a short onchain delay.", "warn");
 }
 
@@ -1452,6 +1500,13 @@ positionsListEl.addEventListener("click", (event) => {
   handleClaimIntent(row.dataset.positionId);
 });
 
+positionsRefreshButtonEl?.addEventListener("click", () => {
+  if (!state.wallet) {
+    return;
+  }
+  loadPositions({ fresh: true, full: true });
+});
+
 if (window.TON_CONNECT_UI?.TonConnectUI) {
   try {
     const tonConnectUI = new window.TON_CONNECT_UI.TonConnectUI({
@@ -1505,3 +1560,4 @@ setInterval(() => {
 loadPrices();
 loadMarkets(state.activeMarketStatus);
 clearActionFeedback();
+syncPositionsRefreshButton();

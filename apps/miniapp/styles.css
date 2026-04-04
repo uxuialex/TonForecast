@@ -1136,10 +1136,45 @@ select:focus {
   margin-top: 24px;
 }
 
+.positions-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
 .positions-heading {
   font-size: 18px;
   font-weight: 600;
-  margin-bottom: 12px;
+  margin-bottom: 0;
+}
+
+.positions-refresh-button {
+  min-width: 92px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.positions-refresh-button.is-busy {
+  position: relative;
+  overflow: hidden;
+}
+
+.positions-refresh-button.is-busy::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.1) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-100%);
+  animation: busy-shimmer 1.05s linear infinite;
 }
 
 /* --- Positions ------------------------------------------------ */

@@ -91,11 +91,12 @@ export async function handleRequest(request) {
     if (url.pathname === "/api/positions") {
       const userAddress = url.searchParams.get("userAddress");
       const fresh = url.searchParams.get("fresh") === "1";
+      const full = url.searchParams.get("full") === "1";
       if (!userAddress) {
         return json({ error: "userAddress is required" }, { status: 400 });
       }
 
-      return json({ items: await listPositions(userAddress, { fresh }) });
+      return json({ items: await listPositions(userAddress, { fresh, full }) });
     }
 
     if (url.pathname === "/api/create-context") {

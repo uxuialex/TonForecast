@@ -21,6 +21,7 @@ import {
   STATUS_RESOLVED_NO,
   STATUS_RESOLVED_YES,
   nanosToTonDecimal,
+  parseAddress,
 } from "./tonForecastMarket.js";
 
 const PRECISION_BY_ASSET = {
@@ -33,7 +34,7 @@ const PRECISION_BY_ASSET = {
 };
 const MARKET_VIEW_CACHE_TTL_MS = 8_000;
 const POSITION_READ_CONCURRENCY = 2;
-const POSITION_SCAN_LIMIT = 8;
+const POSITION_RECENT_SCAN_LIMIT = 16;
 const POSITION_CACHE_TTL_MS = 15_000;
 const CHAIN_CONFIRM_TIMEOUT_SEC = 120;
 const marketViewCache = new Map();
@@ -292,6 +293,28 @@ function getCachedPositions(cacheKey, { allowStale = false } = {}) {
   return entry.items;
 }
 
+function normalizeUserAddress(userAddress) {
+  return parseAddress(userAddress).toString();
+}
+
+function getParticipantAddresses(record) {
+  return Array.isArray(record.participantAddresses)
+    ? record.participantAddresses.filter(Boolean)
+    : [];
+}
+
+function markParticipant(record, userAddress) {
+  const participants = getParticipantAddresses(record);
+  if (participants.includes(userAddress)) {
+    return;
+  }
+
+  saveMarketRecord({
+    contractAddress: record.contractAddress,
+    participantAddresses: [...participants, userAddress],
+  });
+}
+
 async function buildMarkets(status = "") {
   const cacheKey = status || "ALL";
   const cached = getCachedMarketViews(cacheKey);
@@ -366,12 +389,33 @@ export async function getMarketById(marketId) {
   return market ?? null;
 }
 
-async function buildPositions(userAddress) {
+function getPositionCandidateRecords(userAddress, { full = false } = {}) {
   const records = listMarketRecords();
   const sortedRecords = [...records]
     .filter((record) => !record.createFailedAt)
-    .sort((left, right) => Number(right.createdAt) - Number(left.createdAt))
-    .slice(0, POSITION_SCAN_LIMIT);
+    .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+
+  if (full) {
+    return sortedRecords;
+  }
+
+  const recentRecords = sortedRecords.slice(0, POSITION_RECENT_SCAN_LIMIT);
+  const hintedRecords = sortedRecords.filter((record) =>
+    getParticipantAddresses(record).includes(userAddress),
+  );
+  const seen = new Set();
+  return [...hintedRecords, ...recentRecords].filter((record) => {
+    if (seen.has(record.contractAddress)) {
+      return false;
+    }
+    seen.add(record.contractAddress);
+    return true;
+  }).sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+}
+
+async function buildPositions(userAddress, options = {}) {
+  const normalizedUser = normalizeUserAddress(userAddress);
+  const sortedRecords = getPositionCandidateRecords(normalizedUser, options);
   const nowSec = Math.floor(Date.now() / 1000);
   const snapshotMap = await getAssetSnapshotMap();
   const entries = await mapConcurrent(
@@ -379,7 +423,7 @@ async function buildPositions(userAddress) {
     POSITION_READ_CONCURRENCY,
     async (record) => {
       try {
-        const stake = await getCachedUserStake(record.contractAddress, userAddress);
+        const stake = await getCachedUserStake(record.contractAddress, normalizedUser);
         const amountYesTon = nanosToTonDecimal(stake.yesAmount);
         const amountNoTon = nanosToTonDecimal(stake.noAmount);
         const totalAmountTon = amountYesTon + amountNoTon;
@@ -388,6 +432,7 @@ async function buildPositions(userAddress) {
           return null;
         }
 
+        markParticipant(record, normalizedUser);
         const marketView = await buildMarketFromRecord(record, snapshotMap, nowSec);
         if (!marketView) {
           return null;
@@ -396,8 +441,8 @@ async function buildPositions(userAddress) {
         const side = amountYesTon > 0 ? "YES" : "NO";
         return buildPositionView(
           {
-            id: `${record.contractAddress}:${userAddress}`,
-            userAddress,
+            id: `${record.contractAddress}:${normalizedUser}`,
+            userAddress: normalizedUser,
             contractAddress: record.contractAddress,
             side,
             amountTon: totalAmountTon,
@@ -414,12 +459,15 @@ async function buildPositions(userAddress) {
     },
   );
 
-  return entries.filter(Boolean);
+  return entries
+    .filter(Boolean)
+    .sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0));
 }
 
 export async function listPositions(userAddress, options = {}) {
-  const normalizedUser = String(userAddress);
+  const normalizedUser = normalizeUserAddress(userAddress);
   const fresh = options.fresh === true;
+  const full = options.full === true;
   const cacheKey = normalizedUser;
 
   if (!fresh) {
@@ -433,7 +481,7 @@ export async function listPositions(userAddress, options = {}) {
     return positionsInflight.get(cacheKey);
   }
 
-  const inflight = buildPositions(normalizedUser)
+  const inflight = buildPositions(normalizedUser, { full })
     .then((items) => {
       positionsCache.set(cacheKey, {
         items,
