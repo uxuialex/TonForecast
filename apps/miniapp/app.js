@@ -93,6 +93,7 @@ const adminAuditListEl = document.querySelector("#admin-audit-list");
 const adminAccessButtonEl = document.querySelector("#admin-access-button");
 const adminBackupButtonEl = document.querySelector("#admin-backup-button");
 const adminRefreshButtonEl = document.querySelector("#admin-refresh-button");
+const adminSectionEl = document.querySelector(".admin-section");
 const marketFilterEl = document.querySelector("#market-filter");
 const marketFilterTriggerEl = document.querySelector("#market-filter-trigger");
 const marketFilterLabelEl = document.querySelector("#market-filter-label");
@@ -142,6 +143,7 @@ const state = {
   userMarkets: [],
   prices: [],
   adminToken: readAdminToken(),
+  adminEligible: false,
   adminMarkets: [],
   adminAuditEntries: [],
   adminLoading: false,
@@ -317,6 +319,11 @@ function buildSinglePositionQuery(userAddress, contractAddress, options = {}) {
     params.set("fresh", "1");
   }
   return `/api/positions/market/${encodeURIComponent(contractAddress)}?${params.toString()}`;
+}
+
+function buildAdminEligibilityQuery(userAddress) {
+  const params = new URLSearchParams({ userAddress });
+  return `/api/admin/eligibility?${params.toString()}`;
 }
 
 function renderInlineNotice(element, notice) {
@@ -748,6 +755,37 @@ function getOutcomeLabel(outcome) {
   return "Pending";
 }
 
+async function loadAdminEligibility(userAddress) {
+  if (!userAddress) {
+    state.adminEligible = false;
+    syncAdminControls();
+    return false;
+  }
+
+  try {
+    const payload = await requestJson(buildAdminEligibilityQuery(userAddress));
+    state.adminEligible = payload.allowed === true;
+  } catch {
+    state.adminEligible = false;
+  }
+
+  if (!state.adminEligible) {
+    state.adminToken = "";
+    state.adminMarkets = [];
+    state.adminAuditEntries = [];
+    persistAdminToken("");
+    renderAdminMarkets([]);
+    renderAdminAuditLog([]);
+  } else if (state.adminToken) {
+    loadAdminMarkets().catch((error) => {
+      console.warn("loadAdminMarkets failed", error);
+    });
+  }
+
+  syncAdminControls();
+  return state.adminEligible;
+}
+
 function syncWalletState(wallet) {
   state.wallet = wallet;
 
@@ -756,6 +794,11 @@ function syncWalletState(wallet) {
     state.pendingClaim = null;
     state.positionsLoaded = false;
     state.positionsLoading = false;
+    state.adminEligible = false;
+    state.adminToken = "";
+    state.adminMarkets = [];
+    state.adminAuditEntries = [];
+    persistAdminToken("");
     walletStatusEl.textContent = "Wallet not connected";
     walletAddressEl.textContent =
       "Connect a TON wallet to create markets, place bets, and claim payouts.";
@@ -769,6 +812,8 @@ function syncWalletState(wallet) {
     renderUserMarkets([]);
     syncPositionsRefreshButton();
     syncAdminControls();
+    renderAdminMarkets([]);
+    renderAdminAuditLog([]);
     renderMarkets(state.markets);
     renderPositions(state.positions);
     setCreateNotice("Connect a wallet to unlock create, bet, and claim actions.", "info");
@@ -780,6 +825,9 @@ function syncWalletState(wallet) {
   walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
   setPositionsSyncMeta("Wallet connected. Profile snapshot will sync when opened.");
   setUserMarketsSyncMeta("Wallet connected. Tracked markets will sync when opened.");
+  loadAdminEligibility(wallet.account.address).catch((error) => {
+    console.warn("loadAdminEligibility failed", error);
+  });
   clearActionFeedback();
   if (state.createNotice?.message?.startsWith("Connect a wallet")) {
     setCreateNotice(null);
@@ -817,9 +865,16 @@ async function requestAdminJson(url, options = {}) {
   if (!state.adminToken) {
     throw new Error("Admin token is missing");
   }
+  if (!state.wallet?.account?.address) {
+    throw new Error("Admin wallet is missing");
+  }
+  if (!state.adminEligible) {
+    throw new Error("This wallet is not allowed to use admin mode");
+  }
 
   const headers = new Headers(options.headers ?? {});
   headers.set("x-admin-token", state.adminToken);
+  headers.set("x-admin-wallet", state.wallet.account.address);
   headers.set("x-admin-actor", state.wallet?.account?.address ? `wallet:${state.wallet.account.address}` : "miniapp-admin");
   return requestJson(url, {
     ...options,
@@ -828,9 +883,17 @@ async function requestAdminJson(url, options = {}) {
 }
 
 function syncAdminControls() {
-  const hasToken = Boolean(state.adminToken);
+  const eligible = Boolean(state.adminEligible);
+  const hasToken = eligible && Boolean(state.adminToken);
+
+  if (adminSectionEl) {
+    adminSectionEl.hidden = !eligible;
+  }
+
   if (adminFeedbackEl) {
-    adminFeedbackEl.textContent = hasToken
+    adminFeedbackEl.textContent = !eligible
+      ? "Admin mode is restricted to the owner wallet."
+      : hasToken
       ? state.adminLoading
         ? "Admin mode enabled. Loading flagged markets..."
         : `Admin mode enabled. ${state.adminMarkets.length} market${state.adminMarkets.length === 1 ? "" : "s"} loaded.`
@@ -1055,6 +1118,11 @@ async function handleAdminBackup() {
 }
 
 async function handleAdminAccess() {
+  if (!state.adminEligible) {
+    window.alert("This wallet is not allowed to use admin mode.");
+    return;
+  }
+
   if (state.adminToken) {
     persistAdminToken("");
     state.adminToken = "";
@@ -2300,8 +2368,3 @@ syncAdminControls();
 renderUserMarkets(state.userMarkets);
 renderAdminMarkets(state.adminMarkets);
 renderAdminAuditLog(state.adminAuditEntries);
-if (state.adminToken) {
-  loadAdminMarkets().catch((error) => {
-    console.warn("initial admin load failed", error);
-  });
-}

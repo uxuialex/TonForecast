@@ -18,7 +18,12 @@ import {
   createMarketIntent,
   getCreateContext,
 } from "./lib/marketActions.js";
-import { ensureRuntimeEnvLoaded, getAdminToken, getTonRpcPoolSnapshot } from "./lib/runtimeEnv.js";
+import {
+  ensureRuntimeEnvLoaded,
+  getAdminAllowedWallets,
+  getAdminToken,
+  getTonRpcPoolSnapshot,
+} from "./lib/runtimeEnv.js";
 import { getAssetSnapshots } from "./lib/stonApi.js";
 import {
   getMarketById,
@@ -62,10 +67,40 @@ function requireAdmin(request) {
   if (!providedToken || providedToken !== configuredToken) {
     throw Object.assign(new Error("Admin access denied"), { statusCode: 403 });
   }
+
+  const providedWallet = request.headers.get("x-admin-wallet")?.trim();
+  if (!isAdminWalletAllowed(providedWallet)) {
+    throw Object.assign(new Error("Admin wallet is not allowed"), { statusCode: 403 });
+  }
 }
 
 function getAdminActor(request) {
   return request.headers.get("x-admin-actor")?.trim() || "miniapp-admin";
+}
+
+function normalizeWalletCandidate(value) {
+  try {
+    return parseAddress(String(value ?? "").trim()).toString();
+  } catch {
+    return "";
+  }
+}
+
+function getAllowedAdminWalletSet() {
+  return new Set(
+    getAdminAllowedWallets()
+      .map((value) => normalizeWalletCandidate(value))
+      .filter(Boolean),
+  );
+}
+
+function isAdminWalletAllowed(userAddress) {
+  const normalizedWallet = normalizeWalletCandidate(userAddress);
+  if (!normalizedWallet) {
+    return false;
+  }
+
+  return getAllowedAdminWalletSet().has(normalizedWallet);
 }
 
 function buildRuntimeHealthPayload() {
@@ -147,6 +182,15 @@ export async function handleRequest(request) {
     if (url.pathname === "/api/admin/session") {
       requireAdmin(request);
       return json({ ok: true });
+    }
+
+    if (url.pathname === "/api/admin/eligibility") {
+      const userAddress = url.searchParams.get("userAddress");
+      if (!userAddress) {
+        return json({ allowed: false });
+      }
+
+      return json({ allowed: isAdminWalletAllowed(userAddress) });
     }
 
     if (url.pathname === "/api/admin/markets") {

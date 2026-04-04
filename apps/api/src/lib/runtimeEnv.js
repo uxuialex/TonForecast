@@ -8,6 +8,9 @@ const DEFAULT_MAINNET_ENDPOINT = "https://toncenter.com/api/v2/jsonRPC";
 const DEFAULT_RESOLVER_WALLET_VERSION = "v5r1";
 const DEFAULT_RPC_FAILURE_THRESHOLD = 3;
 const DEFAULT_RPC_COOLDOWN_MS = 30_000;
+const DEFAULT_ADMIN_ALLOWED_WALLETS = [
+  "UQDBTlOU6i2kcUOkSK4EEfEgZTaG4zkOSTY6R1nZiTMYZbEO",
+];
 
 let envLoaded = false;
 let tonClientPool = null;
@@ -324,4 +327,10 @@ export function ensureRuntimeEnvLoaded() {
 export function getAdminToken() {
   loadLocalEnv();
   return process.env.ADMIN_TOKEN?.trim() || "";
+}
+
+export function getAdminAllowedWallets() {
+  loadLocalEnv();
+  const configured = readEnvList("ADMIN_ALLOWED_WALLETS");
+  return configured.length ? configured : [...DEFAULT_ADMIN_ALLOWED_WALLETS];
 }

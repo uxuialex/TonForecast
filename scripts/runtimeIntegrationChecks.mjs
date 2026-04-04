@@ -133,6 +133,7 @@ async function testRuntimeStoreMigrationAndBackup() {
 async function testServerAdminRoutes() {
   await withTempRuntimeDir(async () => {
     process.env.ADMIN_TOKEN = "secret-token";
+    process.env.ADMIN_ALLOWED_WALLETS = sampleContract;
     const registry = await importFresh("apps/api/src/lib/marketRegistry.js");
     registry.saveMarketRecord({
       contractAddress: sampleContract,
@@ -156,8 +157,8 @@ async function testServerAdminRoutes() {
     const { handleRequest } = await importFresh("apps/api/src/server.js");
 
     const sessionResponse = await handleRequest(
-      new Request("http://localhost/api/admin/session", {
-        headers: { "x-admin-token": "secret-token" },
+        new Request("http://localhost/api/admin/session", {
+        headers: { "x-admin-token": "secret-token", "x-admin-wallet": sampleContract },
       }),
     );
     assert.equal(sessionResponse.status, 200);
@@ -168,6 +169,7 @@ async function testServerAdminRoutes() {
         headers: {
           "content-type": "application/json",
           "x-admin-token": "secret-token",
+          "x-admin-wallet": sampleContract,
           "x-admin-actor": "integration-test",
         },
         body: JSON.stringify({
@@ -192,7 +194,7 @@ async function testServerAdminRoutes() {
 
     const auditResponse = await handleRequest(
       new Request("http://localhost/api/admin/audit-log?limit=5", {
-        headers: { "x-admin-token": "secret-token" },
+        headers: { "x-admin-token": "secret-token", "x-admin-wallet": sampleContract },
       }),
     );
     assert.equal(auditResponse.status, 200);
@@ -201,6 +203,7 @@ async function testServerAdminRoutes() {
     assert.equal(auditPayload.items[0].action, "market.flags");
 
     delete process.env.ADMIN_TOKEN;
+    delete process.env.ADMIN_ALLOWED_WALLETS;
   });
 }
 
