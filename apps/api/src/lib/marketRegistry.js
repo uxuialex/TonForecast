@@ -6,21 +6,38 @@ const runtimeFile = path.join(runtimeDir, "markets.json");
 const pendingCreates = new Map();
 const PENDING_TTL_MS = 2 * 60 * 1000;
 
+function createEmptyStore() {
+  return { version: 2, markets: [], userMarketIndex: {} };
+}
+
 function ensureStore() {
   fs.mkdirSync(runtimeDir, { recursive: true });
   if (!fs.existsSync(runtimeFile)) {
-    fs.writeFileSync(runtimeFile, JSON.stringify({ version: 1, markets: [] }, null, 2));
+    fs.writeFileSync(runtimeFile, JSON.stringify(createEmptyStore(), null, 2));
   }
 }
 
 function readStore() {
   ensureStore();
-  return JSON.parse(fs.readFileSync(runtimeFile, "utf8"));
+  const parsed = JSON.parse(fs.readFileSync(runtimeFile, "utf8"));
+  return {
+    ...createEmptyStore(),
+    ...parsed,
+    markets: Array.isArray(parsed.markets) ? parsed.markets : [],
+    userMarketIndex:
+      parsed.userMarketIndex && typeof parsed.userMarketIndex === "object"
+        ? parsed.userMarketIndex
+        : {},
+  };
 }
 
 function writeStore(store) {
   ensureStore();
   fs.writeFileSync(runtimeFile, JSON.stringify(store, null, 2));
+}
+
+function uniqueNonEmpty(values) {
+  return [...new Set((values ?? []).filter(Boolean))];
 }
 
 function cleanupPendingCreates() {
@@ -60,6 +77,71 @@ export function saveMarketRecord(record) {
   });
 
   return record;
+}
+
+export function rememberUserMarket(contractAddress, userAddress) {
+  if (!contractAddress || !userAddress) {
+    return null;
+  }
+
+  const store = readStore();
+  const items = store.markets ?? [];
+  const existingIndex = items.findIndex((item) => item.contractAddress === contractAddress);
+  if (existingIndex < 0) {
+    return null;
+  }
+
+  const existingRecord = items[existingIndex];
+  const nextParticipantAddresses = uniqueNonEmpty([
+    ...(Array.isArray(existingRecord.participantAddresses) ? existingRecord.participantAddresses : []),
+    userAddress,
+  ]);
+  const nextUserContracts = uniqueNonEmpty([
+    contractAddress,
+    ...(((store.userMarketIndex ?? {})[userAddress]) ?? []),
+  ]);
+
+  items[existingIndex] = {
+    ...existingRecord,
+    participantAddresses: nextParticipantAddresses,
+  };
+
+  writeStore({
+    ...store,
+    markets: items,
+    userMarketIndex: {
+      ...(store.userMarketIndex ?? {}),
+      [userAddress]: nextUserContracts,
+    },
+  });
+
+  return items[existingIndex];
+}
+
+export function getIndexedMarketRecordsForUser(userAddress) {
+  if (!userAddress) {
+    return [];
+  }
+
+  const store = readStore();
+  const items = store.markets ?? [];
+  const byAddress = new Map();
+  const indexedContracts = ((store.userMarketIndex ?? {})[userAddress]) ?? [];
+
+  for (const contractAddress of indexedContracts) {
+    const record = items.find((item) => item.contractAddress === contractAddress);
+    if (record) {
+      byAddress.set(record.contractAddress, record);
+    }
+  }
+
+  for (const record of items) {
+    if (Array.isArray(record.participantAddresses) && record.participantAddresses.includes(userAddress)) {
+      byAddress.set(record.contractAddress, record);
+    }
+  }
+
+  return [...byAddress.values()];
 }
 
 export function reservePendingCreate(record) {
@@ -108,4 +190,3 @@ export function findBlockingCreate(asset, durationSec, nowSec = Math.floor(Date.
     ) ?? null
   );
 }
-

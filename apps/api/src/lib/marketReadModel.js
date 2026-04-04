@@ -4,7 +4,13 @@ import {
   buildPositionView,
   formatUsd,
 } from "../../../../packages/shared/src/index.js";
-import { getMarketRecord, listMarketRecords, saveMarketRecord } from "./marketRegistry.js";
+import {
+  getIndexedMarketRecordsForUser,
+  getMarketRecord,
+  listMarketRecords,
+  rememberUserMarket,
+  saveMarketRecord,
+} from "./marketRegistry.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
 import {
   DIRECTION_ABOVE,
@@ -327,15 +333,7 @@ function getParticipantAddresses(record) {
 }
 
 function markParticipant(record, userAddress) {
-  const participants = getParticipantAddresses(record);
-  if (participants.includes(userAddress)) {
-    return;
-  }
-
-  saveMarketRecord({
-    contractAddress: record.contractAddress,
-    participantAddresses: [...participants, userAddress],
-  });
+  rememberUserMarket(record.contractAddress, userAddress);
 }
 
 async function buildMarkets(status = "") {
@@ -425,9 +423,7 @@ function getPositionCandidateRecords(userAddress, { full = false } = {}) {
   }
 
   const recentRecords = sortedRecords.slice(0, POSITION_RECENT_SCAN_LIMIT);
-  const hintedRecords = sortedRecords.filter((record) =>
-    getParticipantAddresses(record).includes(userAddress),
-  );
+  const hintedRecords = getIndexedMarketRecordsForUser(userAddress);
   const seen = new Set();
   return [...hintedRecords, ...recentRecords].filter((record) => {
     if (seen.has(record.contractAddress)) {
