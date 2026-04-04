@@ -76,8 +76,6 @@ const durationPickerOptionEls = Array.from(
   document.querySelectorAll(".duration-picker__option"),
 );
 const previewQuestionEl = document.querySelector("#preview-question");
-const walletStatusEl = document.querySelector("#wallet-status");
-const walletAddressEl = document.querySelector("#wallet-address");
 const marketGridEl = document.querySelector("#market-grid");
 const marketFeedbackEl = document.querySelector("#markets-feedback");
 const positionsFeedbackEl = document.querySelector("#positions-feedback");
@@ -279,6 +277,17 @@ function setActionFeedback(message) {
 
   actionFeedbackEl.textContent = message;
   actionFeedbackEl.classList.remove("is-hidden");
+}
+
+function setWalletSummary(status, message) {
+  const walletStatusEl = document.querySelector("#wallet-status");
+  const walletAddressEl = document.querySelector("#wallet-address");
+  if (walletStatusEl) {
+    walletStatusEl.textContent = status;
+  }
+  if (walletAddressEl) {
+    walletAddressEl.textContent = message;
+  }
 }
 
 function clearActionFeedback() {
@@ -799,9 +808,10 @@ function syncWalletState(wallet) {
     state.adminMarkets = [];
     state.adminAuditEntries = [];
     persistAdminToken("");
-    walletStatusEl.textContent = "Wallet not connected";
-    walletAddressEl.textContent =
-      "Connect a TON wallet to create markets, place bets, and claim payouts.";
+    setWalletSummary(
+      "Wallet not connected",
+      "Connect a TON wallet to create markets, place bets, and claim payouts.",
+    );
     positionsFeedbackEl.textContent = "Connect a wallet to load positions.";
     positionsFeedbackEl.classList.remove("is-loading");
     setPositionsSyncMeta("Connect a wallet to start syncing.");
@@ -821,9 +831,11 @@ function syncWalletState(wallet) {
     return;
   }
 
-  walletStatusEl.textContent = "Wallet connected";
-  walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
-  setPositionsSyncMeta("Wallet connected. Profile snapshot will sync when opened.");
+  setWalletSummary(
+    "Wallet connected",
+    `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`,
+  );
+  setPositionsSyncMeta("Wallet connected. Positions snapshot will sync when opened.");
   setUserMarketsSyncMeta("Wallet connected. Tracked markets will sync when opened.");
   loadAdminEligibility(wallet.account.address).catch((error) => {
     console.warn("loadAdminEligibility failed", error);
@@ -2328,8 +2340,7 @@ if (window.TON_CONNECT_UI?.TonConnectUI) {
     });
   } catch (error) {
     const message = `Wallet SDK init failed: ${error instanceof Error ? error.message : String(error)}`;
-    walletStatusEl.textContent = "Wallet unavailable";
-    walletAddressEl.textContent = message;
+    setWalletSummary("Wallet unavailable", message);
     setCreateNotice(message, "error");
     console.error(message);
   }
