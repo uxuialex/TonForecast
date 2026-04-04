@@ -895,4 +895,6 @@ export async function getPositionForUser(contractAddress, userAddress, options =
 export function invalidateMarketViewCache() {
   marketViewCache.clear();
   marketViewInflight.clear();
+  positionsCache.clear();
+  positionsInflight.clear();
 }

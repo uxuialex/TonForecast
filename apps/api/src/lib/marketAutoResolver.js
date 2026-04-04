@@ -19,6 +19,7 @@ import {
   openMarketContract,
   parseAddress,
 } from "./tonForecastMarket.js";
+import { logInfo, logWarn } from "./runtimeLogger.js";
 
 const OP_RESOLVE_MARKET = 0x9dfc7b54;
 const DEFAULT_SEND_VALUE = toNano("0.05");
@@ -63,7 +64,7 @@ async function withRateLimitRetry(label, task) {
       }
 
       const delayMs = Math.min(30_000, 1_500 * (attempt + 1));
-      console.log(`[resolver] ${label} hit RPC rate limit, retry in ${delayMs}ms`);
+      logWarn("resolver.rpc.retry", { label, delayMs });
       await sleep(delayMs);
     }
   }
@@ -253,13 +254,14 @@ export async function runAutoResolveJob(marketAddress) {
 
   const finalPrice = resolutionDecision.finalPrice;
   const expectedOutcome = resolutionDecision.outcome;
-
-  console.log(`[resolver] market=${normalizedAddress}`);
-  console.log(`[resolver] threshold=$${formatPrice6(state.threshold)}`);
-  console.log(`[resolver] final price=$${formatPrice6(finalPrice)}`);
-  console.log(`[resolver] price sources=${resolutionDecision.summary}`);
-  console.log(`[resolver] spread=${resolutionDecision.spreadBps}bps`);
-  console.log(`[resolver] expected outcome=${expectedOutcome}`);
+  logInfo("resolver.decision.ready", {
+    marketAddress: normalizedAddress,
+    threshold: formatPrice6(state.threshold),
+    finalPrice: formatPrice6(finalPrice),
+    sourceSummary: resolutionDecision.summary,
+    spreadBps: Number(resolutionDecision.spreadBps ?? 0),
+    expectedOutcome,
+  });
 
   const body = beginCell()
     .storeUint(OP_RESOLVE_MARKET, 32)

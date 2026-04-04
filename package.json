@@ -9,7 +9,8 @@
     "test:runtime": "node scripts/runtimeIntegrationChecks.mjs",
     "deploy:contract": "blueprint run",
     "resolver:auto": "ts-node scripts/autoResolveTonForecastMarket.ts",
-    "backup:runtime": "node scripts/exportRuntimeBackup.mjs"
+    "backup:runtime": "node scripts/exportRuntimeBackup.mjs",
+    "restore:runtime": "node scripts/restoreRuntimeBackup.mjs"
   },
   "dependencies": {
     "@ton/core": "~0"

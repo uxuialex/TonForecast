@@ -4,7 +4,9 @@ import {
   appendAdminAuditEntry,
   exportRuntimeBackup,
   getRuntimeStoreStats,
+  listRuntimeBackups,
   listAdminAuditEntries,
+  restoreRuntimeBackup,
   saveMarketRecord,
 } from "./lib/marketRegistry.js";
 import {
@@ -155,6 +157,10 @@ export async function handleRequest(request) {
       return json(buildRuntimeHealthPayload());
     }
 
+    if (url.pathname === "/api/runtime/resolver") {
+      return json(getAutoResolverStatus());
+    }
+
     if (url.pathname.startsWith("/api/assets/icons/")) {
       const asset = decodeURIComponent(url.pathname.split("/").pop() ?? "");
       const icon = await readAssetIcon(asset);
@@ -236,10 +242,21 @@ export async function handleRequest(request) {
       );
     }
 
+    if (url.pathname === "/api/admin/resolver/status") {
+      requireAdmin(request);
+      return json(getAutoResolverStatus());
+    }
+
     if (url.pathname === "/api/admin/source-monitor") {
       requireAdmin(request);
       const asset = url.searchParams.get("asset") ?? "TON";
       return json(await getSourceMonitorSnapshot(asset));
+    }
+
+    if (url.pathname === "/api/admin/runtime/backups") {
+      requireAdmin(request);
+      const limit = Number(url.searchParams.get("limit") ?? 12);
+      return json({ items: listRuntimeBackups(limit) });
     }
 
     if (url.pathname === "/api/admin/runtime/backup" && request.method === "POST") {
@@ -252,6 +269,19 @@ export async function handleRequest(request) {
         details: backup,
       });
       return json(backup);
+    }
+
+    if (url.pathname === "/api/admin/runtime/restore" && request.method === "POST") {
+      const adminWallet = requireAdmin(request);
+      const body = await readJson(request);
+      const restore = restoreRuntimeBackup(body.fileName);
+      invalidateMarketViewCache();
+      appendAdminAuditEntry({
+        actor: getAdminActor(adminWallet),
+        action: "runtime.restore",
+        details: restore,
+      });
+      return json(restore);
     }
 
     if (url.pathname.endsWith("/retry-resolve") && request.method === "POST") {
@@ -359,7 +389,9 @@ export async function handleRequest(request) {
     if (url.pathname === "/api/create-context") {
       const asset = url.searchParams.get("asset");
       const durationSec = url.searchParams.get("durationSec");
-      return json(await getCreateContext(asset, durationSec));
+      const direction = url.searchParams.get("direction") ?? "above";
+      const threshold = url.searchParams.get("threshold");
+      return json(await getCreateContext(asset, durationSec, direction, threshold));
     }
 
     if (url.pathname === "/api/actions/create-intent" && request.method === "POST") {

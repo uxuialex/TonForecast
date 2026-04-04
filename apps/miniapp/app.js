@@ -22,6 +22,7 @@ const TOKEN_META = {
 
 const ASSET_ICON_VERSION = "20260404b";
 const CREATE_ASSET_OPTIONS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
+const CREATE_DIRECTION_OPTIONS = ["above", "below"];
 
 const MARKET_FILTER_OPTIONS = [
   { value: "OPEN", label: "Active" },
@@ -82,6 +83,8 @@ const assetPickerMenuEl = document.querySelector("#asset-picker-menu");
 const assetPickerOptionEls = Array.from(
   document.querySelectorAll(".asset-picker__option"),
 );
+const directionEl = document.querySelector("#direction");
+const directionButtonEls = Array.from(document.querySelectorAll(".direction-toggle__button"));
 const durationEl = document.querySelector("#duration");
 const durationPickerEl = document.querySelector("#duration-picker");
 const durationPickerTriggerEl = document.querySelector("#duration-picker-trigger");
@@ -103,6 +106,8 @@ const userMarketsSyncMetaEl = document.querySelector("#user-markets-sync-meta");
 const userMarketsListEl = document.querySelector("#user-markets-list");
 const adminFeedbackEl = document.querySelector("#admin-feedback");
 const adminSourceMonitorEl = document.querySelector("#admin-source-monitor");
+const adminResolverMonitorEl = document.querySelector("#admin-resolver-monitor");
+const adminBackupsListEl = document.querySelector("#admin-backups-list");
 const adminListEl = document.querySelector("#admin-list");
 const adminAuditListEl = document.querySelector("#admin-audit-list");
 const adminAccessButtonEl = document.querySelector("#admin-access-button");
@@ -119,6 +124,8 @@ const marketFilterOptionEls = Array.from(
 const priceStripEl = document.querySelector("#price-strip");
 const createCurrentPriceEl = document.querySelector("#create-current-price");
 const createNoticeEl = document.querySelector("#create-notice");
+const thresholdPresetsEl = document.querySelector("#threshold-presets");
+const thresholdSelectedLabelEl = document.querySelector("#threshold-selected-label");
 const createMarketButtonEl = document.querySelector("#create-market-button");
 const actionFeedbackEl = document.querySelector("#action-feedback");
 const runtimeModeEl = document.querySelector("#runtime-mode");
@@ -162,14 +169,19 @@ const state = {
   adminMarkets: [],
   adminAuditEntries: [],
   adminSourceMonitor: null,
+  adminResolverStatus: null,
+  adminBackups: [],
   adminLoading: false,
   userMarketsLoading: false,
   createContext: {
     asset: assetEl.value,
+    direction: directionEl?.value ?? "above",
     durationSec: Number(durationEl.value),
     currentPrice: null,
     currentPriceLabel: "",
+    threshold: null,
     thresholdLabel: "",
+    thresholdPresets: [],
     question: "",
     canCreate: false,
     blockedReason: "",
@@ -347,6 +359,21 @@ function buildSinglePositionQuery(userAddress, contractAddress, options = {}) {
     params.set("fresh", "1");
   }
   return `/api/positions/market/${encodeURIComponent(contractAddress)}?${params.toString()}`;
+}
+
+function buildCreateContextQuery() {
+  const params = new URLSearchParams({
+    asset: assetEl.value,
+    durationSec: durationEl.value,
+    direction: directionEl?.value ?? "above",
+  });
+
+  const selectedThreshold = thresholdPresetsEl?.dataset.selectedThreshold;
+  if (selectedThreshold) {
+    params.set("threshold", selectedThreshold);
+  }
+
+  return `/api/create-context?${params.toString()}`;
 }
 
 function buildAdminEligibilityQuery(userAddress) {
@@ -852,10 +879,14 @@ async function loadAdminEligibility(userAddress) {
     state.adminMarkets = [];
     state.adminAuditEntries = [];
     state.adminSourceMonitor = null;
+    state.adminResolverStatus = null;
+    state.adminBackups = [];
     persistAdminToken("");
     renderAdminMarkets([]);
     renderAdminAuditLog([]);
     renderAdminSourceMonitor(null);
+    renderAdminResolverStatus(null);
+    renderAdminBackups([]);
   } else if (state.adminToken) {
     loadAdminMarkets().catch((error) => {
       console.warn("loadAdminMarkets failed", error);
@@ -879,6 +910,8 @@ function syncWalletState(wallet) {
     state.adminMarkets = [];
     state.adminAuditEntries = [];
     state.adminSourceMonitor = null;
+    state.adminResolverStatus = null;
+    state.adminBackups = [];
     persistAdminToken("");
     setWalletSummary(
       "Wallet not connected",
@@ -897,6 +930,8 @@ function syncWalletState(wallet) {
     renderAdminMarkets([]);
     renderAdminAuditLog([]);
     renderAdminSourceMonitor(null);
+    renderAdminResolverStatus(null);
+    renderAdminBackups([]);
     renderMarkets(state.markets);
     renderPositions(state.positions);
     setCreateNotice("Connect a wallet to unlock create, bet, and claim actions.", "info");
@@ -1100,6 +1135,73 @@ function renderAdminSourceMonitor(snapshot) {
   `;
 }
 
+function renderAdminResolverStatus(snapshot) {
+  if (!adminResolverMonitorEl) {
+    return;
+  }
+
+  if (!state.adminToken || !snapshot) {
+    adminResolverMonitorEl.innerHTML = "";
+    return;
+  }
+
+  const statusClass = snapshot.healthy ? "is-ok" : "is-warn";
+  const issues = Array.isArray(snapshot.issues) ? snapshot.issues.join(" • ") : "";
+
+  adminResolverMonitorEl.innerHTML = `
+    <div class="admin-source-monitor__card ${statusClass}">
+      <div class="admin-source-monitor__title">Resolver status</div>
+      <div class="admin-source-monitor__meta">
+        <span>Status: ${escapeHtml(snapshot.healthy ? "healthy" : "watch")}</span>
+        <span>Queue: ${escapeHtml(String(snapshot.queued))}</span>
+        <span>Running: ${escapeHtml(String(snapshot.running))}</span>
+      </div>
+      <div class="admin-source-monitor__meta">
+        <span>Scheduled: ${escapeHtml(String(snapshot.scheduled))}</span>
+        <span>Retrying: ${escapeHtml(String(snapshot.retrying))}</span>
+        <span>Last sweep: ${escapeHtml(snapshot.lastSweepAt ?? "n/a")}</span>
+      </div>
+      ${issues ? `<div class="admin-source-monitor__reason">${escapeHtml(issues)}</div>` : ""}
+    </div>
+  `;
+}
+
+function renderAdminBackups(items) {
+  if (!adminBackupsListEl) {
+    return;
+  }
+
+  if (!state.adminToken) {
+    adminBackupsListEl.innerHTML = "";
+    return;
+  }
+
+  if (!items.length) {
+    adminBackupsListEl.innerHTML =
+      '<div class="position-empty">No runtime backups yet. Use Backup to create the first restore point.</div>';
+    return;
+  }
+
+  adminBackupsListEl.innerHTML = items
+    .map((backup) => `
+      <article class="position-row admin-audit-row" data-backup-file-name="${escapeAttr(backup.fileName)}">
+        <div>
+          <div class="position-header">
+            <p class="position-title">${escapeHtml(backup.fileName)}</p>
+            <span class="position-meta">${escapeHtml(backup.modifiedAt)}</span>
+          </div>
+          <div class="admin-market-summary">
+            <span>Size: ${escapeHtml(String(backup.sizeBytes))} bytes</span>
+          </div>
+        </div>
+        <button class="ghost-button compact-button" type="button" data-admin-action="restore-backup" ${state.adminLoading ? "disabled" : ""}>
+          Restore
+        </button>
+      </article>
+    `)
+    .join("");
+}
+
 function renderAdminAuditLog(items) {
   if (!adminAuditListEl) {
     return;
@@ -1161,6 +1263,32 @@ async function loadAdminSourceMonitor() {
   return state.adminSourceMonitor;
 }
 
+async function loadAdminResolverStatus() {
+  if (!state.adminToken) {
+    state.adminResolverStatus = null;
+    renderAdminResolverStatus(null);
+    return null;
+  }
+
+  const payload = await requestAdminJson("/api/admin/resolver/status");
+  state.adminResolverStatus = payload ?? null;
+  renderAdminResolverStatus(state.adminResolverStatus);
+  return state.adminResolverStatus;
+}
+
+async function loadAdminBackups() {
+  if (!state.adminToken) {
+    state.adminBackups = [];
+    renderAdminBackups([]);
+    return [];
+  }
+
+  const payload = await requestAdminJson("/api/admin/runtime/backups?limit=8");
+  state.adminBackups = payload.items ?? [];
+  renderAdminBackups(state.adminBackups);
+  return state.adminBackups;
+}
+
 async function loadAdminMarkets() {
   if (!state.adminToken) {
     state.adminMarkets = [];
@@ -1169,6 +1297,10 @@ async function loadAdminMarkets() {
     renderAdminAuditLog([]);
     state.adminSourceMonitor = null;
     renderAdminSourceMonitor(null);
+    state.adminResolverStatus = null;
+    renderAdminResolverStatus(null);
+    state.adminBackups = [];
+    renderAdminBackups([]);
     return;
   }
 
@@ -1179,6 +1311,8 @@ async function loadAdminMarkets() {
       requestAdminJson("/api/admin/markets"),
       loadAdminAuditLog(),
       loadAdminSourceMonitor(),
+      loadAdminResolverStatus(),
+      loadAdminBackups(),
     ]);
     state.adminMarkets = (marketsPayload.items ?? []).filter(
       (item) => item.isProblemMarket || item.adminHiddenAt || item.adminLegacyFlagAt,
@@ -1251,6 +1385,38 @@ async function handleAdminBackup() {
   }
 }
 
+async function handleAdminRestore(fileName) {
+  if (!fileName) {
+    return;
+  }
+
+  const confirmed = window.confirm(
+    `Restore runtime backup ${fileName}? Current runtime data will be backed up first.`,
+  );
+  if (!confirmed) {
+    return;
+  }
+
+  state.adminLoading = true;
+  syncAdminControls();
+  try {
+    await requestAdminJson("/api/admin/runtime/restore", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ fileName }),
+    });
+    await Promise.all([
+      loadMarkets(state.activeMarketStatus),
+      state.wallet ? loadPositions({ fresh: true, full: true, silent: true }) : Promise.resolve(),
+      state.wallet ? loadUserMarkets() : Promise.resolve(),
+      loadAdminMarkets(),
+    ]);
+  } finally {
+    state.adminLoading = false;
+    syncAdminControls();
+  }
+}
+
 async function handleAdminAccess() {
   if (!state.adminEligible) {
     window.alert("This wallet is not allowed to use admin mode.");
@@ -1263,9 +1429,13 @@ async function handleAdminAccess() {
     state.adminMarkets = [];
     state.adminAuditEntries = [];
     state.adminSourceMonitor = null;
+    state.adminResolverStatus = null;
+    state.adminBackups = [];
     renderAdminMarkets(state.adminMarkets);
     renderAdminAuditLog(state.adminAuditEntries);
     renderAdminSourceMonitor(state.adminSourceMonitor);
+    renderAdminResolverStatus(state.adminResolverStatus);
+    renderAdminBackups(state.adminBackups);
     syncAdminControls();
     return;
   }
@@ -1366,16 +1536,17 @@ function renderPositionSkeletons(count = 2) {
 function syncPreview() {
   const asset = assetEl.value;
   const duration = durationEl.value;
+  const direction = directionEl?.value ?? "above";
   const currentPriceText = state.createContext.currentPriceLabel
     ? `Current price: ${state.createContext.currentPriceLabel}`
     : "Current price: loading...";
 
   previewQuestionEl.textContent =
     state.createContext.question ||
-    `Will ${asset} be above live market price in ${formatDurationLabel(duration)}?`;
+    `Will ${asset} be ${direction} ${state.createContext.thresholdLabel || "live market threshold"} in ${formatDurationLabel(duration)}?`;
   createCurrentPriceEl.textContent = state.createContext.blockedReason
-    ? `${currentPriceText} • ${state.createContext.blockedReason}`
-    : `${currentPriceText} • Fixed on signature. Price source: CMC for TON, STON.fi for ecosystem tokens.`;
+    ? `${currentPriceText} • ${state.createContext.thresholdLabel || "Threshold pending"} • ${state.createContext.blockedReason}`
+    : `${currentPriceText} • Threshold ${state.createContext.thresholdLabel || "loading..."} • Fixed on signature. Price source: CMC for TON, STON.fi for ecosystem tokens.`;
 
   renderInlineNotice(createNoticeEl, state.createNotice);
 }
@@ -1770,26 +1941,31 @@ async function primePositions() {
 async function loadCreateContext() {
   const requestSeq = ++createContextRequestSeq;
   const asset = assetEl.value;
+  const direction = directionEl?.value ?? "above";
   const durationSec = durationEl.value;
 
   try {
-    const payload = await requestJson(
-      `/api/create-context?asset=${encodeURIComponent(asset)}&durationSec=${encodeURIComponent(durationSec)}`,
-    );
+    const payload = await requestJson(buildCreateContextQuery());
     if (requestSeq !== createContextRequestSeq) {
       return;
     }
 
     state.createContext = {
       asset,
+      direction,
       durationSec: Number(durationSec),
       currentPrice: payload.currentPrice ?? null,
       currentPriceLabel: payload.currentPriceLabel ?? "",
+      threshold: payload.threshold ?? null,
       thresholdLabel: payload.thresholdLabel ?? "",
+      thresholdPresets: payload.thresholdPresets ?? [],
       question: payload.question ?? "",
       canCreate: Boolean(payload.canCreate),
       blockedReason: payload.blockedReason ?? "",
     };
+    if (thresholdPresetsEl) {
+      thresholdPresetsEl.dataset.selectedThreshold = payload.threshold != null ? String(payload.threshold) : "";
+    }
     state.createContextLoaded = true;
   } catch (error) {
     if (requestSeq !== createContextRequestSeq) {
@@ -1797,10 +1973,13 @@ async function loadCreateContext() {
     }
     state.createContext = {
       asset,
+      direction,
       durationSec: Number(durationSec),
       currentPrice: null,
       currentPriceLabel: "",
+      threshold: null,
       thresholdLabel: "",
+      thresholdPresets: [],
       question: "",
       canCreate: false,
       blockedReason: error.message,
@@ -1809,6 +1988,8 @@ async function loadCreateContext() {
     createCurrentPriceEl.textContent = `Current price unavailable: ${error.message}`;
   }
 
+  syncDirectionToggleUi();
+  renderThresholdPresets();
   syncCreateButtonState();
   syncPreview();
 }
@@ -1854,6 +2035,8 @@ async function handleCreateIntent() {
         ownerAddress: state.wallet.account.address,
         asset: assetEl.value,
         durationSec: Number(durationEl.value),
+        direction: directionEl?.value ?? "above",
+        threshold: thresholdPresetsEl?.dataset.selectedThreshold || undefined,
       }),
     });
 
@@ -2176,6 +2359,15 @@ function syncAssetPickerUi() {
   });
 }
 
+function syncDirectionToggleUi() {
+  const selectedDirection = directionEl?.value || CREATE_DIRECTION_OPTIONS[0];
+  directionButtonEls.forEach((button) => {
+    const isSelected = button.dataset.directionValue === selectedDirection;
+    button.classList.toggle("is-selected", isSelected);
+    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
+  });
+}
+
 function syncDurationPickerUi() {
   if (!durationPickerValueEl || !durationEl) {
     return;
@@ -2189,6 +2381,44 @@ function syncDurationPickerUi() {
       option.dataset.durationValue === selectedDuration,
     );
   });
+}
+
+function renderThresholdPresets() {
+  if (!thresholdPresetsEl || !thresholdSelectedLabelEl) {
+    return;
+  }
+
+  const presets = Array.isArray(state.createContext.thresholdPresets)
+    ? state.createContext.thresholdPresets
+    : [];
+  const selectedThreshold = Number(state.createContext.threshold ?? 0);
+
+  thresholdSelectedLabelEl.textContent = state.createContext.thresholdLabel || "Loading…";
+
+  if (!presets.length) {
+    thresholdPresetsEl.innerHTML =
+      '<div class="threshold-presets__empty">Threshold presets will appear once the live price is ready.</div>';
+    thresholdPresetsEl.dataset.selectedThreshold = "";
+    return;
+  }
+
+  thresholdPresetsEl.dataset.selectedThreshold = String(selectedThreshold);
+  thresholdPresetsEl.innerHTML = presets
+    .map((preset) => {
+      const value = Number(preset.value);
+      const isSelected = value === selectedThreshold;
+      return `
+        <button
+          class="threshold-chip ${isSelected ? "is-selected" : ""}"
+          type="button"
+          data-threshold-value="${escapeAttr(String(value))}"
+          aria-pressed="${isSelected ? "true" : "false"}"
+        >
+          ${escapeHtml(preset.label)}
+        </button>
+      `;
+    })
+    .join("");
 }
 
 if (marketFilterTriggerEl && marketFilterMenuEl) {
@@ -2344,6 +2574,36 @@ if (durationPickerTriggerEl && durationPickerMenuEl) {
   });
 });
 
+syncDirectionToggleUi();
+
+directionButtonEls.forEach((button) => {
+  button.addEventListener("click", () => {
+    const nextDirection = button.dataset.directionValue;
+    if (!nextDirection || !directionEl || nextDirection === directionEl.value) {
+      return;
+    }
+
+    directionEl.value = nextDirection;
+    syncDirectionToggleUi();
+    loadCreateContext();
+  });
+});
+
+thresholdPresetsEl?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-threshold-value]");
+  if (!button) {
+    return;
+  }
+
+  const nextThreshold = button.dataset.thresholdValue;
+  if (!nextThreshold || thresholdPresetsEl.dataset.selectedThreshold === nextThreshold) {
+    return;
+  }
+
+  thresholdPresetsEl.dataset.selectedThreshold = nextThreshold;
+  loadCreateContext();
+});
+
 createMarketButtonEl.addEventListener("click", handleCreateIntent);
 
 marketGridEl.addEventListener("click", (event) => {
@@ -2406,6 +2666,19 @@ adminRefreshButtonEl?.addEventListener("click", () => {
 
 adminBackupButtonEl?.addEventListener("click", () => {
   handleAdminBackup().catch((error) => {
+    window.alert(normalizeActionError(error.message));
+  });
+});
+
+adminBackupsListEl?.addEventListener("click", (event) => {
+  const button = event.target.closest("button[data-admin-action='restore-backup']");
+  if (!button) {
+    return;
+  }
+
+  const row = button.closest("[data-backup-file-name]");
+  const fileName = row?.dataset.backupFileName;
+  handleAdminRestore(fileName).catch((error) => {
     window.alert(normalizeActionError(error.message));
   });
 });
@@ -2514,6 +2787,11 @@ loadMarkets(state.activeMarketStatus);
 clearActionFeedback();
 syncPositionsRefreshButton();
 syncAdminControls();
+syncDirectionToggleUi();
+renderThresholdPresets();
 renderUserMarkets(state.userMarkets);
 renderAdminMarkets(state.adminMarkets);
 renderAdminAuditLog(state.adminAuditEntries);
+renderAdminSourceMonitor(state.adminSourceMonitor);
+renderAdminResolverStatus(state.adminResolverStatus);
+renderAdminBackups(state.adminBackups);

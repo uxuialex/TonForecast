@@ -11,7 +11,7 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="./styles.css?v=20260404m" />
+    <link rel="stylesheet" href="./styles.css?v=20260404n" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://unpkg.com/@tonconnect/ui@2.0.11/dist/tonconnect-ui.min.js"></script>
   </head>
@@ -104,6 +104,31 @@
             </label>
 
             <label>
+              <span class="label-text">Direction</span>
+              <input id="direction" type="hidden" value="above" />
+              <div class="direction-toggle" role="tablist" aria-label="Market direction">
+                <button
+                  id="direction-above-button"
+                  class="direction-toggle__button is-selected"
+                  type="button"
+                  data-direction-value="above"
+                  aria-pressed="true"
+                >
+                  Above
+                </button>
+                <button
+                  id="direction-below-button"
+                  class="direction-toggle__button"
+                  type="button"
+                  data-direction-value="below"
+                  aria-pressed="false"
+                >
+                  Below
+                </button>
+              </div>
+            </label>
+
+            <label>
               <span class="label-text">Duration</span>
               <input id="duration" type="hidden" value="3600" />
               <div id="duration-picker" class="form-picker duration-picker">
@@ -130,6 +155,14 @@
                 </div>
               </div>
             </label>
+
+            <div class="threshold-block">
+              <div class="threshold-block__header">
+                <span class="label-text">Threshold</span>
+                <span id="threshold-selected-label" class="threshold-block__selected">Loading…</span>
+              </div>
+              <div id="threshold-presets" class="threshold-presets"></div>
+            </div>
 
             <p id="create-current-price" class="field-hint">Current price: loading…</p>
             <div id="create-notice" class="inline-notice create-notice is-hidden" aria-live="polite"></div>
@@ -199,7 +232,14 @@
                 </button>
               </div>
             </div>
-            <div id="admin-source-monitor" class="admin-source-monitor"></div>
+            <div class="admin-runtime-grid">
+              <div id="admin-source-monitor" class="admin-source-monitor"></div>
+              <div id="admin-resolver-monitor" class="admin-source-monitor"></div>
+            </div>
+            <div class="positions-toolbar admin-audit-toolbar">
+              <h3 class="positions-heading">Backups</h3>
+            </div>
+            <div id="admin-backups-list" class="positions-list admin-audit-list"></div>
             <div id="admin-list" class="positions-list admin-list"></div>
             <div class="positions-toolbar admin-audit-toolbar">
               <h3 class="positions-heading">Admin Audit</h3>
@@ -235,6 +275,6 @@
       </nav>
     </div>
 
-    <script src="./app.js?v=20260404m"></script>
+    <script src="./app.js?v=20260404n"></script>
   </body>
 </html>

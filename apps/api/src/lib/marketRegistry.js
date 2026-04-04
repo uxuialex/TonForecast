@@ -2,25 +2,39 @@ import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-const runtimeDir = path.resolve(process.cwd(), "apps/api/data/runtime");
-const legacyRuntimeFile = path.join(runtimeDir, "markets.json");
-const runtimeDbFile = path.join(runtimeDir, "markets.db");
-const runtimeBackupDir = path.join(runtimeDir, "backups");
 const pendingCreates = new Map();
 const PENDING_TTL_MS = 2 * 60 * 1000;
 
 let db = null;
+let dbFilePath = null;
+
+function getRuntimeDir() {
+  return path.resolve(process.cwd(), "apps/api/data/runtime");
+}
+
+function getLegacyRuntimeFile() {
+  return path.join(getRuntimeDir(), "markets.json");
+}
+
+function getRuntimeDbFile() {
+  return path.join(getRuntimeDir(), "markets.db");
+}
+
+function getRuntimeBackupDir() {
+  return path.join(getRuntimeDir(), "backups");
+}
 
 function createEmptyStore() {
   return { version: 5, markets: [], userMarketIndex: {}, userPositionSnapshots: {} };
 }
 
 function ensureRuntimeDir() {
-  fs.mkdirSync(runtimeDir, { recursive: true });
-  fs.mkdirSync(runtimeBackupDir, { recursive: true });
+  fs.mkdirSync(getRuntimeDir(), { recursive: true });
+  fs.mkdirSync(getRuntimeBackupDir(), { recursive: true });
 }
 
 function readLegacyStore() {
+  const legacyRuntimeFile = getLegacyRuntimeFile();
   if (!fs.existsSync(legacyRuntimeFile)) {
     return createEmptyStore();
   }
@@ -53,12 +67,23 @@ function uniqueNonEmpty(values) {
 }
 
 function getDb() {
-  if (db) {
+  const nextDbFilePath = getRuntimeDbFile();
+  if (db && dbFilePath === nextDbFilePath) {
     return db;
   }
 
+  if (db && dbFilePath !== nextDbFilePath) {
+    try {
+      db.close();
+    } catch {
+      // Ignore close errors when switching runtime roots in tests.
+    }
+    db = null;
+  }
+
   ensureRuntimeDir();
-  db = new DatabaseSync(runtimeDbFile);
+  db = new DatabaseSync(nextDbFilePath);
+  dbFilePath = nextDbFilePath;
   db.exec(`
     PRAGMA journal_mode = WAL;
     PRAGMA synchronous = NORMAL;
@@ -287,6 +312,101 @@ function getAllUserPositionSnapshots() {
   }
 
   return grouped;
+}
+
+function normalizeImportedStore(payload) {
+  return {
+    version: Number(payload?.version ?? createEmptyStore().version),
+    markets: Array.isArray(payload?.markets) ? payload.markets.filter((item) => item?.contractAddress) : [],
+    userMarketIndex:
+      payload?.userMarketIndex && typeof payload.userMarketIndex === "object"
+        ? payload.userMarketIndex
+        : {},
+    userPositionSnapshots:
+      payload?.userPositionSnapshots && typeof payload.userPositionSnapshots === "object"
+        ? payload.userPositionSnapshots
+        : {},
+    adminAuditLog: Array.isArray(payload?.adminAuditLog) ? payload.adminAuditLog : [],
+  };
+}
+
+function replaceRuntimeStore(database, store) {
+  database.prepare("DELETE FROM markets").run();
+  database.prepare("DELETE FROM user_market_index").run();
+  database.prepare("DELETE FROM user_position_snapshots").run();
+  database.prepare("DELETE FROM admin_audit_log").run();
+
+  const upsertMarket = database.prepare(`
+    INSERT INTO markets (contract_address, created_at, payload)
+    VALUES (?, ?, ?)
+    ON CONFLICT(contract_address) DO UPDATE SET
+      created_at = excluded.created_at,
+      payload = excluded.payload
+  `);
+
+  for (const record of store.markets) {
+    upsertMarket.run(
+      record.contractAddress,
+      Number(record.createdAt ?? 0),
+      JSON.stringify(record),
+    );
+  }
+
+  const insertUserMarketIndex = database.prepare(`
+    INSERT OR IGNORE INTO user_market_index (user_address, contract_address)
+    VALUES (?, ?)
+  `);
+  for (const [userAddress, contractAddresses] of Object.entries(store.userMarketIndex)) {
+    for (const contractAddress of uniqueNonEmpty(contractAddresses)) {
+      insertUserMarketIndex.run(userAddress, contractAddress);
+    }
+  }
+
+  const upsertSnapshot = database.prepare(`
+    INSERT INTO user_position_snapshots (user_address, synced_at, items_json)
+    VALUES (?, ?, ?)
+    ON CONFLICT(user_address) DO UPDATE SET
+      synced_at = excluded.synced_at,
+      items_json = excluded.items_json
+  `);
+  for (const [userAddress, entry] of Object.entries(store.userPositionSnapshots)) {
+    const normalizedEntry = Array.isArray(entry)
+      ? { items: entry, syncedAt: 0 }
+      : entry && typeof entry === "object"
+        ? entry
+        : { items: [], syncedAt: 0 };
+
+    upsertSnapshot.run(
+      userAddress,
+      Number(normalizedEntry.syncedAt ?? 0),
+      JSON.stringify(Array.isArray(normalizedEntry.items) ? normalizedEntry.items : []),
+    );
+  }
+
+  const insertAuditEntry = database.prepare(`
+    INSERT INTO admin_audit_log (created_at, actor, action, contract_address, details_json)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  for (const entry of store.adminAuditLog) {
+    const action = String(entry?.action ?? "").trim();
+    if (!action) {
+      continue;
+    }
+
+    insertAuditEntry.run(
+      Number(entry.createdAt ?? 0),
+      String(entry.actor ?? "restore"),
+      action,
+      entry.contractAddress ?? null,
+      JSON.stringify(entry.details ?? {}),
+    );
+  }
+
+  database.prepare(`
+    INSERT INTO meta (key, value)
+    VALUES ('runtime_store_version', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value
+  `).run(String(store.version || createEmptyStore().version));
 }
 
 export function listMarketRecords() {
@@ -542,6 +662,7 @@ export function listAdminAuditEntries(limit = 100) {
 
 export function getRuntimeStoreStats() {
   const database = getDb();
+  const runtimeDbFile = getRuntimeDbFile();
   return {
     dbFile: runtimeDbFile,
     dbFileSizeBytes: fs.existsSync(runtimeDbFile) ? fs.statSync(runtimeDbFile).size : 0,
@@ -560,6 +681,7 @@ export function getRuntimeStoreStats() {
 
 export function exportRuntimeBackup(reason = "manual") {
   ensureRuntimeDir();
+  const runtimeBackupDir = getRuntimeBackupDir();
   const safeReason = String(reason ?? "manual")
     .trim()
     .toLowerCase()
@@ -591,6 +713,66 @@ export function exportRuntimeBackup(reason = "manual") {
   };
 }
 
+export function listRuntimeBackups(limit = 12) {
+  ensureRuntimeDir();
+  const runtimeBackupDir = getRuntimeBackupDir();
+  const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 12));
+  return fs
+    .readdirSync(runtimeBackupDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => {
+      const filePath = path.join(runtimeBackupDir, entry.name);
+      const stats = fs.statSync(filePath);
+      return {
+        fileName: entry.name,
+        filePath,
+        sizeBytes: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+      };
+    })
+    .sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt))
+    .slice(0, normalizedLimit);
+}
+
+export function restoreRuntimeBackup(fileName) {
+  ensureRuntimeDir();
+  const runtimeBackupDir = getRuntimeBackupDir();
+  const normalizedFileName = path.basename(String(fileName ?? "").trim());
+  if (!normalizedFileName || normalizedFileName.includes("..")) {
+    throw new Error("backup fileName is required");
+  }
+
+  const filePath = path.join(runtimeBackupDir, normalizedFileName);
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Backup not found: ${normalizedFileName}`);
+  }
+
+  let payload;
+  try {
+    payload = JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    throw new Error(
+      `Failed to read backup ${normalizedFileName}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+
+  const backupBeforeRestore = exportRuntimeBackup("pre-restore");
+  const normalizedStore = normalizeImportedStore(payload);
+  withTransaction((tx) => {
+    replaceRuntimeStore(tx, normalizedStore);
+  });
+
+  return {
+    fileName: normalizedFileName,
+    filePath,
+    restoredAt: new Date().toISOString(),
+    backupBeforeRestore: backupBeforeRestore.fileName,
+    marketCount: normalizedStore.markets.length,
+    userCount: Object.keys(normalizedStore.userMarketIndex).length,
+    auditEntryCount: normalizedStore.adminAuditLog.length,
+  };
+}
+
 export function reservePendingCreate(record) {
   cleanupPendingCreates();
   pendingCreates.set(record.contractAddress, {
@@ -614,13 +796,20 @@ export function listPendingCreates() {
   return [...pendingCreates.values()];
 }
 
-export function findBlockingCreate(asset, durationSec, nowSec = Math.floor(Date.now() / 1000)) {
+export function findBlockingCreate(
+  asset,
+  durationSec,
+  nowSec = Math.floor(Date.now() / 1000),
+  direction = "above",
+) {
   const duration = Number(durationSec);
+  const normalizedDirection = String(direction ?? "above").trim().toLowerCase();
   const persisted = listMarketRecords().find(
     (item) =>
       !item.createFailedAt &&
       item.asset === asset &&
       Number(item.durationSec) === duration &&
+      String(item.direction ?? "above").trim().toLowerCase() === normalizedDirection &&
       Number(item.closeAt) > nowSec,
   );
 
@@ -634,6 +823,7 @@ export function findBlockingCreate(asset, durationSec, nowSec = Math.floor(Date.
       (item) =>
         item.asset === asset &&
         Number(item.durationSec) === duration &&
+        String(item.direction ?? "above").trim().toLowerCase() === normalizedDirection &&
         Number(item.closeAt) > nowSec,
     ) ?? null
   );

@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 const projectRoot = path.resolve(import.meta.dirname, "..");
 const originalCwd = process.cwd();
 const sampleContract = "EQD1dCBqi2fMi31ijxu-pMgVUJW68_VMZW-Dh8OtzVzAyBJA";
+const sampleContractTwo = "EQD-PbGKh8fb3Ky1rzxXM78fsjcBr-12JQXp19LFq8K04-JF";
 
 async function importFresh(relativePath) {
   const absolutePath = path.resolve(projectRoot, relativePath);
@@ -181,11 +182,43 @@ async function testRuntimeStoreMigrationAndBackup() {
 
     const backup = registry.exportRuntimeBackup("integration");
     assert.equal(fs.existsSync(backup.filePath), true);
+    const backups = registry.listRuntimeBackups(5);
+    assert.equal(backups[0].fileName, backup.fileName);
+
+    registry.saveMarketRecord({
+      contractAddress: sampleContractTwo,
+      marketId: "2",
+      asset: "TON",
+      durationSec: 900,
+      createdAt: 10,
+      closeAt: 11,
+      resolveAt: 12,
+      threshold: 1.25,
+      direction: "below",
+      ownerAddress: sampleContract,
+      resolverAddress: sampleContract,
+      treasuryAddress: sampleContract,
+    });
+
+    const restore = registry.restoreRuntimeBackup(backup.fileName);
+    assert.equal(restore.fileName, backup.fileName);
+    assert.equal(registry.getRuntimeStoreStats().marketCount, 1);
 
     const stats = registry.getRuntimeStoreStats();
     assert.equal(stats.marketCount, 1);
     assert.equal(stats.auditEntryCount, 1);
     assert.equal(stats.userSnapshotCount, 1);
+  });
+}
+
+async function testCreateContextDirectionAndPresets() {
+  await withTempRuntimeDir(async () => {
+    const marketActions = await importFresh("apps/api/src/lib/marketActions.js");
+    const context = await marketActions.getCreateContext("TON", 300, "below");
+    assert.equal(context.direction, "below");
+    assert.ok(Array.isArray(context.thresholdPresets));
+    assert.ok(context.thresholdPresets.length >= 1);
+    assert.match(context.question, /below/i);
   });
 }
 
@@ -241,16 +274,24 @@ async function testServerAdminRoutes() {
       }),
     );
     assert.equal(updateResponse.status, 200);
+    await updateResponse.json();
 
-    const updatedRecord = registry.getMarketRecord(sampleContract);
-    assert.ok(updatedRecord.adminHiddenAt);
-    assert.ok(updatedRecord.adminLegacyFlagAt);
+    const updatedRecord = registry.listMarketRecords().find(
+      (item) => item.adminHiddenAt && item.adminLegacyFlagAt,
+    );
+    assert.ok(updatedRecord?.adminHiddenAt);
+    assert.ok(updatedRecord?.adminLegacyFlagAt);
 
     const healthResponse = await handleRequest(new Request("http://localhost/api/runtime/health"));
     assert.equal(healthResponse.status, 200);
     const healthPayload = await healthResponse.json();
     assert.equal(healthPayload.ok, true);
     assert.equal(healthPayload.runtimeStore.marketCount, 1);
+
+    const resolverResponse = await handleRequest(new Request("http://localhost/api/runtime/resolver"));
+    assert.equal(resolverResponse.status, 200);
+    const resolverPayload = await resolverResponse.json();
+    assert.equal(typeof resolverPayload.healthy, "boolean");
 
     const auditResponse = await handleRequest(
       new Request("http://localhost/api/admin/audit-log?limit=5", {
@@ -263,6 +304,28 @@ async function testServerAdminRoutes() {
     assert.equal(auditPayload.items[0].action, "market.flags");
     assert.equal(auditPayload.items[0].actor, `wallet:${sampleContract}`);
 
+    const backupResponse = await handleRequest(
+      new Request("http://localhost/api/admin/runtime/backup", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-admin-token": "secret-token",
+          "x-admin-wallet": sampleContract,
+        },
+        body: JSON.stringify({ reason: "integration" }),
+      }),
+    );
+    assert.equal(backupResponse.status, 200);
+
+    const backupsResponse = await handleRequest(
+      new Request("http://localhost/api/admin/runtime/backups?limit=5", {
+        headers: { "x-admin-token": "secret-token", "x-admin-wallet": sampleContract },
+      }),
+    );
+    assert.equal(backupsResponse.status, 200);
+    const backupsPayload = await backupsResponse.json();
+    assert.ok(backupsPayload.items.length >= 1);
+
     delete process.env.ADMIN_TOKEN;
     delete process.env.ADMIN_ALLOWED_WALLETS;
   });
@@ -272,6 +335,7 @@ await testRuntimeEnvFailover();
 await testResolvePolicyConsensus();
 await testSourceMonitorSummary();
 await testRuntimeStoreMigrationAndBackup();
+await testCreateContextDirectionAndPresets();
 await testServerAdminRoutes();
 
 console.log("runtime integration checks passed");
