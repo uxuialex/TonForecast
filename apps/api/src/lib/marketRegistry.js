@@ -7,7 +7,7 @@ const pendingCreates = new Map();
 const PENDING_TTL_MS = 2 * 60 * 1000;
 
 function createEmptyStore() {
-  return { version: 2, markets: [], userMarketIndex: {} };
+  return { version: 3, markets: [], userMarketIndex: {}, userPositionSnapshots: {} };
 }
 
 function ensureStore() {
@@ -27,6 +27,10 @@ function readStore() {
     userMarketIndex:
       parsed.userMarketIndex && typeof parsed.userMarketIndex === "object"
         ? parsed.userMarketIndex
+        : {},
+    userPositionSnapshots:
+      parsed.userPositionSnapshots && typeof parsed.userPositionSnapshots === "object"
+        ? parsed.userPositionSnapshots
         : {},
   };
 }
@@ -142,6 +146,66 @@ export function getIndexedMarketRecordsForUser(userAddress) {
   }
 
   return [...byAddress.values()];
+}
+
+export function getUserPositionSnapshot(userAddress) {
+  if (!userAddress) {
+    return null;
+  }
+
+  const store = readStore();
+  const entry = (store.userPositionSnapshots ?? {})[userAddress];
+
+  if (Array.isArray(entry)) {
+    return {
+      items: entry,
+      syncedAt: 0,
+    };
+  }
+
+  if (!entry || typeof entry !== "object") {
+    return null;
+  }
+
+  return {
+    items: Array.isArray(entry.items) ? entry.items : [],
+    syncedAt: Number(entry.syncedAt ?? 0),
+  };
+}
+
+export function saveUserPositionSnapshot(userAddress, items) {
+  if (!userAddress) {
+    return null;
+  }
+
+  const normalizedItems = Array.isArray(items)
+    ? items.filter((item) => item?.id && item?.contractAddress)
+    : [];
+
+  const store = readStore();
+  const nextUserContracts = uniqueNonEmpty([
+    ...(((store.userMarketIndex ?? {})[userAddress]) ?? []),
+    ...normalizedItems.map((item) => item.contractAddress),
+  ]);
+
+  const snapshot = {
+    items: normalizedItems,
+    syncedAt: Math.floor(Date.now() / 1000),
+  };
+
+  writeStore({
+    ...store,
+    userMarketIndex: {
+      ...(store.userMarketIndex ?? {}),
+      [userAddress]: nextUserContracts,
+    },
+    userPositionSnapshots: {
+      ...(store.userPositionSnapshots ?? {}),
+      [userAddress]: snapshot,
+    },
+  });
+
+  return snapshot;
 }
 
 export function reservePendingCreate(record) {

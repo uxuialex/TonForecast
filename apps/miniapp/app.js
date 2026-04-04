@@ -135,6 +135,7 @@ const state = {
 let panelTransitionInFlight = false;
 let marketsRequestSeq = 0;
 let createContextRequestSeq = 0;
+let positionsRequestSeq = 0;
 
 if (runtimeModeEl) {
   runtimeModeEl.textContent = isTelegram ? "Inside Telegram" : "Browser Preview";
@@ -961,6 +962,7 @@ function syncPositionsRefreshButton() {
 }
 
 async function loadPositions(options = {}) {
+  const requestSeq = ++positionsRequestSeq;
   if (!state.wallet) {
     state.positionsLoaded = false;
     state.positionsLoading = false;
@@ -968,17 +970,16 @@ async function loadPositions(options = {}) {
     return;
   }
 
-  if (state.positionsLoading) {
-    return;
-  }
-
   state.positionsLoading = true;
   syncPositionsRefreshButton();
   const isSilent = options.silent === true && state.positions.length > 0;
   if (!isSilent) {
-    positionsFeedbackEl.textContent = state.positions.length
-      ? "Refreshing positions..."
-      : "Loading positions...";
+    positionsFeedbackEl.textContent =
+      options.full && !state.positions.length
+        ? "Syncing all positions..."
+        : state.positions.length
+          ? "Refreshing positions..."
+          : "Loading positions...";
     positionsFeedbackEl.classList.add("is-loading");
   }
   if (!state.positions.length && !isSilent) {
@@ -989,6 +990,9 @@ async function loadPositions(options = {}) {
     const payload = await requestJson(
       buildPositionsQuery(state.wallet.account.address, options),
     );
+    if (requestSeq !== positionsRequestSeq) {
+      return payload.items ?? [];
+    }
     state.positions = payload.items ?? [];
     state.positionsLoaded = true;
     state.positionsLoading = false;
@@ -1000,7 +1004,11 @@ async function loadPositions(options = {}) {
         : "No positions yet.";
     }
     renderPositions(state.positions);
+    return state.positions;
   } catch (error) {
+    if (requestSeq !== positionsRequestSeq) {
+      return state.positions;
+    }
     state.positionsLoaded = state.positions.length > 0;
     state.positionsLoading = false;
     syncPositionsRefreshButton();
@@ -1015,18 +1023,12 @@ async function loadPositions(options = {}) {
     } else {
       renderPositions(state.positions);
     }
+    throw error;
   }
 }
 
 async function primePositions() {
-  await loadPositions({ fresh: true });
-  if (!state.wallet) {
-    return;
-  }
-
-  loadPositions({ fresh: true, full: true, silent: true }).catch((error) => {
-    console.warn("background full positions refresh failed", error);
-  });
+  await loadPositions({ fresh: true, full: true });
 }
 
 async function loadCreateContext() {

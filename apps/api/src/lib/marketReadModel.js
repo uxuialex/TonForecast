@@ -7,9 +7,11 @@ import {
 import {
   getIndexedMarketRecordsForUser,
   getMarketRecord,
+  getUserPositionSnapshot,
   listMarketRecords,
   rememberUserMarket,
   saveMarketRecord,
+  saveUserPositionSnapshot,
 } from "./marketRegistry.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
 import {
@@ -368,6 +370,10 @@ function writePositionsCaches(normalizedUser, items, { includeFull = false } = {
   }
 }
 
+function getPersistedPositionItems(normalizedUser) {
+  return getUserPositionSnapshot(normalizedUser)?.items ?? [];
+}
+
 function normalizeUserAddress(userAddress) {
   return parseAddress(userAddress).toString();
 }
@@ -541,10 +547,14 @@ export async function listPositions(userAddress, options = {}) {
   );
   const recentInflightKey = getPositionsCacheKey(normalizedUser, POSITION_SCOPE_RECENT);
   const fullInflightKey = getPositionsCacheKey(normalizedUser, POSITION_SCOPE_FULL);
+  const persistedItems = getPersistedPositionItems(normalizedUser);
 
   if (!fresh) {
-    const cached = getPreferredCachedPositions(normalizedUser, { full });
-    if (cached) {
+    const cached = mergePositionItems(
+      persistedItems,
+      getPreferredCachedPositions(normalizedUser, { full }) ?? [],
+    );
+    if (cached.length) {
       return cached;
     }
   }
@@ -564,9 +574,13 @@ export async function listPositions(userAddress, options = {}) {
 
   const inflight = buildPositions(normalizedUser, { full })
     .then((items) => {
-      const previousItems = getMergedCachedPositions(normalizedUser, { allowStale: true });
+      const previousItems = mergePositionItems(
+        persistedItems,
+        getMergedCachedPositions(normalizedUser, { allowStale: true }),
+      );
       const mergedItems = mergePositionItems(previousItems, items);
       writePositionsCaches(normalizedUser, mergedItems, { includeFull: full });
+      saveUserPositionSnapshot(normalizedUser, mergedItems);
       return mergedItems;
     })
     .catch((error) => {
@@ -574,11 +588,12 @@ export async function listPositions(userAddress, options = {}) {
         full,
         allowStale: true,
       }) ?? getMergedCachedPositions(normalizedUser, { allowStale: true });
-      if (stale) {
+      const fallback = mergePositionItems(persistedItems, stale ?? []);
+      if (fallback.length) {
         console.warn(
           `[api] positions refresh failed for ${normalizedUser}, serving stale cache: ${error instanceof Error ? error.message : String(error)}`,
         );
-        return stale;
+        return fallback;
       }
 
       throw error;
