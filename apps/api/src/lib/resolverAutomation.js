@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { listMarketRecords } from "./marketRegistry.js";
+import { listMarketRecords, saveMarketRecord } from "./marketRegistry.js";
 
 const activeResolvers = new Map();
 const resolverRetryCounts = new Map();
@@ -7,6 +7,8 @@ const INITIAL_DELAY_MS = 10_000;
 const MAX_RETRY_DELAY_MS = 60_000;
 const AUTO_RESOLVE_LOOKAHEAD_SEC = 10 * 60;
 const AUTO_RESOLVE_SWEEP_INTERVAL_MS = 60_000;
+const AUTO_RESOLVE_BLOCKED_EXIT_CODE = 42;
+const BLOCKED_PREFIX = "[resolver-blocked]";
 let sweepTimer = null;
 
 function getNpmCommand() {
@@ -17,6 +19,21 @@ function getRetryDelayMs(marketAddress) {
   const nextAttempt = (resolverRetryCounts.get(marketAddress) ?? 0) + 1;
   resolverRetryCounts.set(marketAddress, nextAttempt);
   return Math.min(MAX_RETRY_DELAY_MS, 5_000 * nextAttempt);
+}
+
+function captureBlockedReason(output, currentReason) {
+  const lines = output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  for (const line of lines) {
+    if (line.startsWith(BLOCKED_PREFIX)) {
+      return line.slice(BLOCKED_PREFIX.length).trim() || currentReason;
+    }
+  }
+
+  return currentReason;
 }
 
 export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
@@ -41,21 +58,38 @@ export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
     activeResolvers.set(marketAddress, child);
 
     const prefix = `[auto-resolver:${marketAddress}]`;
+    let blockedReason = null;
     child.stdout.on("data", (chunk) => {
       const message = chunk.toString().trim();
       if (message) {
+        blockedReason = captureBlockedReason(message, blockedReason);
         console.log(`${prefix} ${message}`);
       }
     });
     child.stderr.on("data", (chunk) => {
       const message = chunk.toString().trim();
       if (message) {
+        blockedReason = captureBlockedReason(message, blockedReason);
         console.error(`${prefix} ${message}`);
       }
     });
     child.on("exit", (code) => {
       activeResolvers.delete(marketAddress);
       console.log(`${prefix} exited with code ${code ?? 0}`);
+
+      if ((code ?? 0) === AUTO_RESOLVE_BLOCKED_EXIT_CODE) {
+        resolverRetryCounts.delete(marketAddress);
+        saveMarketRecord({
+          contractAddress: marketAddress,
+          autoResolveBlockedAt: Math.floor(Date.now() / 1000),
+          autoResolveBlockedReason:
+            blockedReason || "Permanent auto-resolve failure detected",
+        });
+        console.warn(
+          `${prefix} disabled future auto-resolve attempts: ${blockedReason || "permanent failure"}`,
+        );
+        return;
+      }
 
       if ((code ?? 0) !== 0) {
         const retryDelayMs = getRetryDelayMs(marketAddress);
@@ -76,7 +110,12 @@ function isResolvedRecord(record) {
 }
 
 function isAutoResolvableRecord(record, nowSec) {
-  if (!record?.contractAddress || record.createFailedAt || isResolvedRecord(record)) {
+  if (
+    !record?.contractAddress ||
+    record.createFailedAt ||
+    record.autoResolveBlockedAt ||
+    isResolvedRecord(record)
+  ) {
     return false;
   }
 

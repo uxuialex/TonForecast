@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { mnemonicToWalletKey } from '@ton/crypto';
-import { Address, SendMode, beginCell, toNano } from '@ton/core';
+import { Address, Cell, SendMode, beginCell, toNano } from '@ton/core';
 import { TonClient, WalletContractV4, WalletContractV5R1, internal } from '@ton/ton';
 import {
     DIRECTION_ABOVE,
@@ -25,6 +25,13 @@ const DEFAULT_POLL_INTERVAL_MS = 5_000;
 const DEFAULT_SEND_VALUE = toNano('0.05');
 const DEFAULT_RESOLVER_WALLET_VERSION = 'v5r1';
 const DEFAULT_MAX_RETRIES = 6;
+const AUTO_RESOLVE_BLOCKED_EXIT_CODE = 42;
+const BLOCKED_PREFIX = '[resolver-blocked]';
+const buildArtifactPath = path.resolve(process.cwd(), 'build/TonForecastMarket.compiled.json');
+const buildArtifact = JSON.parse(fs.readFileSync(buildArtifactPath, 'utf8')) as {
+    hash?: string;
+};
+const CURRENT_CONTRACT_CODE_HASH = String(buildArtifact.hash ?? '').trim().toLowerCase();
 
 type OpenedTonForecastMarket = {
     address: Address;
@@ -198,6 +205,24 @@ function deriveExpectedOutcome(
     return OUTCOME_NO;
 }
 
+async function getOnchainContractCodeHash(client: TonClient, address: Address) {
+    const state = await withRateLimitRetry('get_contract_state', () => client.getContractState(address));
+    if (!state.code) {
+        return null;
+    }
+
+    const [codeCell] = Cell.fromBoc(state.code);
+    return codeCell.hash().toString('hex').toLowerCase();
+}
+
+function isLegacyUncontestedMarket(onchainCodeHash: string | null, state: MarketState) {
+    if (!onchainCodeHash || !CURRENT_CONTRACT_CODE_HASH || onchainCodeHash === CURRENT_CONTRACT_CODE_HASH) {
+        return false;
+    }
+
+    return state.yesPool <= 0n || state.noPool <= 0n;
+}
+
 async function waitForSeqnoIncrement(wallet: OpenedResolverWallet, currentSeqno: number) {
     for (let attempt = 0; attempt < 30; attempt += 1) {
         await sleep(1_500);
@@ -271,6 +296,14 @@ async function main() {
     const dueState = await waitForResolvableState(contract, pollIntervalMs);
     if (!dueState) {
         return;
+    }
+
+    const onchainCodeHash = await getOnchainContractCodeHash(client, contract.address);
+    if (isLegacyUncontestedMarket(onchainCodeHash, dueState)) {
+        console.error(
+            `${BLOCKED_PREFIX} legacy uncontested market cannot resolve on current bytecode (codeHash=${onchainCodeHash})`,
+        );
+        process.exit(AUTO_RESOLVE_BLOCKED_EXIT_CODE);
     }
 
     const { finalPrice, priceSource, state } = await fetchAutomaticFinalPrice(contract);
