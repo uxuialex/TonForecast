@@ -110,7 +110,7 @@ jobs:
             }
 
             cleanup_worktree() {
-              git clean -fd \
+              git clean -ffdx \
                 -e .env \
                 -e .env.local \
                 -e apps/api/data/runtime/ \
