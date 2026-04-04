@@ -75,6 +75,7 @@ Current production path is:
 - resolver script in [scripts/autoResolveTonForecastMarket.ts](../scripts/autoResolveTonForecastMarket.ts)
 
 This runtime uses a privileged resolver wallet.
+It is hardened by deterministic quote policy and persistent audit logging, but it is still not fully trustless because one privileged key ultimately sends `resolve_market`.
 
 ### `contracts`
 
@@ -160,3 +161,4 @@ Anything not needed for this slice is secondary.
 - new markets use the contract version and code hash embedded in [apps/api/src/lib/tonForecastMarket.js](../apps/api/src/lib/tonForecastMarket.js)
 - legacy markets are detectable in the read model and can be hidden or flagged through the admin tools
 - runtime health, metrics, and audit log are exposed by [apps/api/src/server.js](../apps/api/src/server.js)
+- resolver decisions now persist quote summaries and blocked reasons into the runtime store and admin audit log

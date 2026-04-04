@@ -1021,6 +1021,9 @@ function renderAdminMarkets(items) {
             <span>Status: ${market.statusLabel}</span>
             <span>Contract: ${shortAddress(market.contractAddress)}</span>
             <span>Treasury: ${shortAddress(market.treasuryAddress ?? market.resolverAddress)}</span>
+            ${market.lastResolveSourceSummary ? `<span>Sources: ${market.lastResolveSourceSummary}</span>` : ""}
+            ${market.lastResolveDecisionReason ? `<span>Resolver note: ${market.lastResolveDecisionReason}</span>` : ""}
+            ${market.lastResolvedFinalPrice ? `<span>Stored price: $${market.lastResolvedFinalPrice}</span>` : ""}
             ${market.adminHiddenReason ? `<span>Hide note: ${market.adminHiddenReason}</span>` : ""}
             ${market.adminLegacyReason ? `<span>Legacy note: ${market.adminLegacyReason}</span>` : ""}
             ${market.autoResolveBlockedReason ? `<span>Resolver: ${market.autoResolveBlockedReason}</span>` : ""}

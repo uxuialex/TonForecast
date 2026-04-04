@@ -23,6 +23,20 @@ function normalizePrice(raw, asset) {
   return Number(raw).toFixed(precision);
 }
 
+function snapshotToResolutionQuote(snapshot) {
+  if (!snapshot?.asset || snapshot.priceUsd == null) {
+    return null;
+  }
+
+  return {
+    asset: snapshot.asset,
+    source: snapshot.source,
+    finalPrice: BigInt(Math.round(Number(snapshot.priceUsd) * 1_000_000)),
+    capturedAt: snapshot.capturedAt ?? new Date().toISOString(),
+    contractAddress: snapshot.contractAddress ?? null,
+  };
+}
+
 function getCmcApiKey() {
   ensureRuntimeEnvLoaded();
   return process.env.CMC_API_KEY?.trim() || undefined;
@@ -105,6 +119,28 @@ async function fetchStonAssetsPayload() {
   return response.json();
 }
 
+function buildStonSnapshotFromPayload(payload, asset, capturedAt = new Date().toISOString()) {
+  const match = payload.asset_list.find(
+    (item) =>
+      item.symbol === asset &&
+      item.default_symbol === true &&
+      item.dex_price_usd,
+  );
+
+  if (!match?.dex_price_usd) {
+    throw new Error(`No STON API snapshot for ${asset}`);
+  }
+
+  return {
+    asset,
+    priceUsd: normalizePrice(match.dex_price_usd, asset),
+    source: "ston.fi",
+    capturedAt,
+    contractAddress: match.contract_address ?? null,
+    iconUrl: getAssetIconUrl(asset),
+  };
+}
+
 async function fetchLiveSnapshots() {
   const [payload, tonCmcSnapshot] = await Promise.all([
     fetchStonAssetsPayload(),
@@ -120,25 +156,7 @@ async function fetchLiveSnapshots() {
       return tonCmcSnapshot;
     }
 
-    const match = payload.asset_list.find(
-      (item) =>
-        item.symbol === asset &&
-        item.default_symbol === true &&
-        item.dex_price_usd,
-    );
-
-    if (!match?.dex_price_usd) {
-      throw new Error(`No STON API snapshot for ${asset}`);
-    }
-
-    return {
-      asset,
-      priceUsd: normalizePrice(match.dex_price_usd, asset),
-      source: "ston.fi",
-      capturedAt,
-      contractAddress: match.contract_address ?? null,
-      iconUrl: getAssetIconUrl(asset),
-    };
+    return buildStonSnapshotFromPayload(payload, asset, capturedAt);
   });
 }
 
@@ -178,6 +196,31 @@ export async function getAssetSnapshots() {
 
 export async function getAssetSnapshotMap() {
   return toSnapshotMap(await getAssetSnapshots());
+}
+
+export async function getResolutionQuoteCandidates(asset) {
+  const [stonResult, cmcResult] = await Promise.allSettled([
+    fetchStonAssetsPayload().then((payload) => buildStonSnapshotFromPayload(payload, asset)),
+    asset === "TON" ? fetchCmcSnapshot(asset) : Promise.resolve(null),
+  ]);
+
+  const quotes = [];
+
+  if (stonResult.status === "fulfilled") {
+    const quote = snapshotToResolutionQuote(stonResult.value);
+    if (quote) {
+      quotes.push(quote);
+    }
+  }
+
+  if (cmcResult.status === "fulfilled" && cmcResult.value) {
+    const quote = snapshotToResolutionQuote(cmcResult.value);
+    if (quote) {
+      quotes.push(quote);
+    }
+  }
+
+  return quotes;
 }
 
 export async function getThresholdPresets(asset, direction = "above") {

@@ -39,6 +39,7 @@ The main files to read first are:
 - Exact threshold hit resolves to `DRAW`
 - Uncontested markets resolve to `DRAW`
 - Protocol fee is `2%` of winnings and goes to the configured treasury wallet
+- Resolver now requires deterministic multi-source agreement for TON before settling and writes a persistent audit trail for each decision
 
 ## Price And Settlement Sources
 

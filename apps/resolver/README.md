@@ -8,7 +8,13 @@ Current production path:
 - deploy market contract with that wallet set as `resolverAddress`
 - set a separate `treasuryAddress` for protocol fees when creating new markets
 - run the auto-resolver with the resolver wallet mnemonic in env
-- the worker polls `resolve_time`, fetches live price from STON API, and sends `resolve_market` automatically
+- the worker polls `resolve_time`, fetches independent live prices, requires consensus on outcome, writes a persistent audit trail, and only then sends `resolve_market`
+
+Hardening notes:
+
+- `scripts/resolveTonForecastMarket.ts` is disabled by default and requires `ALLOW_MANUAL_RESOLVE=1`
+- the production auto-resolver retries instead of resolving if independent sources disagree on outcome
+- legacy markets that cannot resolve on old bytecode are auto-blocked and audited
 
 Example:
 

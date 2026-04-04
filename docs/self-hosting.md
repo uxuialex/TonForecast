@@ -231,6 +231,7 @@ Admin note:
 
 - admin controls inside the Mini App are shown only for wallets in `ADMIN_ALLOWED_WALLETS`
 - admin actions still require `ADMIN_TOKEN`
+- resolver decisions and blocked settles are written into the admin audit log
 
 ## 8. Telegram Bot Setup
 
@@ -272,6 +273,20 @@ Relevant files:
 - [apps/api/src/lib/tonForecastMarket.js](../apps/api/src/lib/tonForecastMarket.js)
 - [apps/api/src/lib/marketActions.js](../apps/api/src/lib/marketActions.js)
 - [apps/api/src/lib/marketReadModel.js](../apps/api/src/lib/marketReadModel.js)
+
+### Resolver Looks Too Centralized
+
+Current production hardening:
+
+- the auto-resolver does not accept manual outcome input
+- TON settlement requires independent source agreement before `resolve_market`
+- source disagreements are retried and written into the persistent audit log
+- manual resolve script is disabled unless `ALLOW_MANUAL_RESOLVE=1`
+
+Important limit:
+
+- this is still not fully trustless because one resolver wallet signs the onchain transaction
+- to remove that trust entirely you need an oracle network or contract-verified threshold signatures, which is a larger protocol change
 
 ### Fee Receiver Looks Wrong
 

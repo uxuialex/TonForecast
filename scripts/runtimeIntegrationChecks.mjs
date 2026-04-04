@@ -64,6 +64,41 @@ async function testRuntimeEnvFailover() {
   });
 }
 
+async function testResolvePolicyConsensus() {
+  const resolvePolicy = await importFresh("apps/api/src/lib/marketResolvePolicy.js");
+
+  const okDecision = resolvePolicy.evaluateResolutionQuotes({
+    assetIdText: "TON",
+    direction: 0,
+    threshold: 1_000_000n,
+    quotes: [
+      { source: "ston.fi", finalPrice: 1_010_000n },
+      { source: "coinmarketcap", finalPrice: 1_011_000n },
+    ],
+  });
+  assert.equal(okDecision.ok, true);
+  assert.equal(okDecision.outcome, 1);
+
+  const disagreement = resolvePolicy.evaluateResolutionQuotes({
+    assetIdText: "TON",
+    direction: 0,
+    threshold: 1_000_000n,
+    quotes: [
+      { source: "ston.fi", finalPrice: 999_000n },
+      { source: "coinmarketcap", finalPrice: 1_001_000n },
+    ],
+  });
+  assert.equal(disagreement.ok, false);
+
+  const insufficient = resolvePolicy.evaluateResolutionQuotes({
+    assetIdText: "TON",
+    direction: 0,
+    threshold: 1_000_000n,
+    quotes: [{ source: "ston.fi", finalPrice: 1_010_000n }],
+  });
+  assert.equal(insufficient.ok, false);
+}
+
 async function testRuntimeStoreMigrationAndBackup() {
   await withTempRuntimeDir(async (tempDir) => {
     fs.writeFileSync(
@@ -216,6 +251,7 @@ async function testServerAdminRoutes() {
 }
 
 await testRuntimeEnvFailover();
+await testResolvePolicyConsensus();
 await testRuntimeStoreMigrationAndBackup();
 await testServerAdminRoutes();
 

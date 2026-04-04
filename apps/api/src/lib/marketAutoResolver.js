@@ -7,14 +7,11 @@ import {
   getResolverWalletVersion,
   withTonClientFailover,
 } from "./runtimeEnv.js";
-import { getAssetSnapshotMap } from "./stonApi.js";
+import { appendAdminAuditEntry, saveMarketRecord } from "./marketRegistry.js";
+import { evaluateResolutionQuotes, formatResolutionQuotes } from "./marketResolvePolicy.js";
+import { getResolutionQuoteCandidates } from "./stonApi.js";
 import { incrementMetric } from "./runtimeMetrics.js";
 import {
-  DIRECTION_ABOVE,
-  DIRECTION_BELOW,
-  OUTCOME_DRAW,
-  OUTCOME_NO,
-  OUTCOME_YES,
   STATUS_LOCKED,
   STATUS_OPEN,
   TON_FORECAST_MARKET_CODE_HASH,
@@ -148,34 +145,6 @@ function isLegacyUncontestedMarket(onchainCodeHash, state) {
   return state.yesPool <= 0n || state.noPool <= 0n;
 }
 
-function deriveExpectedOutcome(direction, threshold, finalPrice) {
-  if (
-    (direction === DIRECTION_ABOVE && finalPrice > threshold) ||
-    (direction === DIRECTION_BELOW && finalPrice < threshold)
-  ) {
-    return OUTCOME_YES;
-  }
-
-  if (finalPrice === threshold) {
-    return OUTCOME_DRAW;
-  }
-
-  return OUTCOME_NO;
-}
-
-async function getAutomaticFinalPrice(assetIdText) {
-  const snapshotMap = await getAssetSnapshotMap();
-  const snapshot = snapshotMap.get(assetIdText);
-  if (!snapshot) {
-    throw new Error(`No live price available for ${assetIdText}`);
-  }
-
-  return {
-    finalPrice: BigInt(Math.round(Number(snapshot.priceUsd) * 1_000_000)),
-    priceSource: snapshot.source,
-  };
-}
-
 export { AUTO_RESOLVE_BLOCKED_EXIT_CODE, BLOCKED_PREFIX };
 
 export async function runAutoResolveJob(marketAddress) {
@@ -205,6 +174,24 @@ export async function runAutoResolveJob(marketAddress) {
   );
   if (isLegacyUncontestedMarket(onchainCodeHash, state)) {
     incrementMetric("auto_resolver_blocked_total", 1, { reason: "legacy_uncontested" });
+    saveMarketRecord({
+      contractAddress: normalizedAddress,
+      lastResolveDecisionAt: Math.floor(Date.now() / 1000),
+      lastResolveDecision: "blocked",
+      lastResolveDecisionReason: "legacy_uncontested",
+      lastResolveSourceSummary: "",
+      lastResolveQuotes: [],
+      lastResolveSpreadBps: null,
+    });
+    appendAdminAuditEntry({
+      actor: `resolver:${wallet.address.toString()}`,
+      action: "market.resolve_blocked",
+      contractAddress: normalizedAddress,
+      details: {
+        reason: "legacy_uncontested",
+        codeHash: onchainCodeHash,
+      },
+    });
     return {
       status: "blocked",
       code: AUTO_RESOLVE_BLOCKED_EXIT_CODE,
@@ -212,17 +199,66 @@ export async function runAutoResolveJob(marketAddress) {
     };
   }
 
-  const { finalPrice, priceSource } = await getAutomaticFinalPrice(state.assetIdText);
-  const expectedOutcome = deriveExpectedOutcome(
-    state.direction,
-    state.threshold,
-    finalPrice,
-  );
+  const resolutionDecision = evaluateResolutionQuotes({
+    assetIdText: state.assetIdText,
+    direction: state.direction,
+    threshold: state.threshold,
+    quotes: await getResolutionQuoteCandidates(state.assetIdText),
+  });
+
+  saveMarketRecord({
+    contractAddress: normalizedAddress,
+    lastResolveDecisionAt: nowSec,
+    lastResolveDecision: resolutionDecision.ok ? "ready" : "blocked_retry",
+    lastResolveDecisionReason: resolutionDecision.reason ?? "",
+    lastResolveSourceSummary: formatResolutionQuotes(resolutionDecision.quotes),
+    lastResolveQuotes: resolutionDecision.quotes.map((quote) => ({
+      source: quote.source,
+      finalPrice: quote.finalPrice.toString(),
+      capturedAt: quote.capturedAt,
+      outcome: quote.outcome ?? null,
+    })),
+    lastResolveSpreadBps: resolutionDecision.spreadBps != null ? Number(resolutionDecision.spreadBps) : null,
+  });
+
+  appendAdminAuditEntry({
+    actor: `resolver:${wallet.address.toString()}`,
+    action: resolutionDecision.ok ? "market.resolve_decision" : "market.resolve_blocked",
+    contractAddress: normalizedAddress,
+    details: {
+      asset: state.assetIdText,
+      threshold: formatPrice6(state.threshold),
+      reason: resolutionDecision.reason ?? "",
+      sourceCount: resolutionDecision.sourceCount,
+      minimumSourceCount: resolutionDecision.minimumSourceCount,
+      spreadBps:
+        resolutionDecision.spreadBps != null ? Number(resolutionDecision.spreadBps) : null,
+      quotes: resolutionDecision.quotes.map((quote) => ({
+        source: quote.source,
+        finalPrice: formatPrice6(quote.finalPrice),
+        capturedAt: quote.capturedAt,
+        outcome: quote.outcome ?? null,
+      })),
+    },
+  });
+
+  if (!resolutionDecision.ok) {
+    incrementMetric("auto_resolver_blocked_total", 1, { reason: "quote_policy" });
+    return {
+      status: "retry",
+      delayMs: 30_000,
+      reason: resolutionDecision.reason || "Resolver quote policy blocked settlement",
+    };
+  }
+
+  const finalPrice = resolutionDecision.finalPrice;
+  const expectedOutcome = resolutionDecision.outcome;
 
   console.log(`[resolver] market=${normalizedAddress}`);
   console.log(`[resolver] threshold=$${formatPrice6(state.threshold)}`);
   console.log(`[resolver] final price=$${formatPrice6(finalPrice)}`);
-  console.log(`[resolver] price source=${priceSource}`);
+  console.log(`[resolver] price sources=${resolutionDecision.summary}`);
+  console.log(`[resolver] spread=${resolutionDecision.spreadBps}bps`);
   console.log(`[resolver] expected outcome=${expectedOutcome}`);
 
   const body = beginCell()
@@ -257,6 +293,25 @@ export async function runAutoResolveJob(marketAddress) {
       reason: "Resolve transaction sent but market is not finalized yet",
     };
   }
+
+  saveMarketRecord({
+    contractAddress: normalizedAddress,
+    lastResolvedAt: Math.floor(Date.now() / 1000),
+    lastResolvedFinalPrice: formatPrice6(finalPrice),
+    lastResolvedSourceSummary: resolutionDecision.summary,
+    lastResolvedSpreadBps: Number(resolutionDecision.spreadBps),
+  });
+  appendAdminAuditEntry({
+    actor: `resolver:${wallet.address.toString()}`,
+    action: "market.resolved",
+    contractAddress: normalizedAddress,
+    details: {
+      finalPrice: formatPrice6(finalPrice),
+      sourceSummary: resolutionDecision.summary,
+      spreadBps: Number(resolutionDecision.spreadBps),
+      provider: providerId,
+    },
+  });
 
   return {
     status: "resolved",

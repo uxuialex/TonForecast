@@ -1,11 +1,6 @@
 import { Address } from '@ton/core';
 import { NetworkProvider } from '@ton/blueprint';
 import {
-    DIRECTION_ABOVE,
-    DIRECTION_BELOW,
-    OUTCOME_DRAW,
-    OUTCOME_NO,
-    OUTCOME_YES,
     STATUS_LOCKED,
     STATUS_OPEN,
     formatPrice6,
@@ -13,10 +8,21 @@ import {
     statusToText,
     TonForecastMarket,
 } from '../wrappers/TonForecastMarket';
-import { fetchDefaultAssetQuote } from './lib/ston';
+// @ts-expect-error Shared resolver policy is authored in JS and consumed at runtime.
+import { evaluateResolutionQuotes, formatResolutionQuotes } from '../apps/api/src/lib/marketResolvePolicy.js';
+// @ts-expect-error Shared quote loader is authored in JS and consumed at runtime.
+import { getResolutionQuoteCandidates } from '../apps/api/src/lib/stonApi.js';
+
+function isManualResolveEnabled() {
+    return process.env.ALLOW_MANUAL_RESOLVE?.trim() === '1';
+}
 
 export async function run(provider: NetworkProvider) {
     const ui = provider.ui();
+    if (!isManualResolveEnabled()) {
+        throw new Error('Manual resolve is disabled by default. Set ALLOW_MANUAL_RESOLVE=1 only for emergency maintenance.');
+    }
+
     const contractAddress = await ui.inputAddress('TonForecastMarket address');
 
     const contract = provider.open(TonForecastMarket.createFromAddress(Address.parse(contractAddress.toString())));
@@ -33,35 +39,28 @@ export async function run(provider: NetworkProvider) {
         return;
     }
 
-    let finalPrice = state.finalPrice;
-    let priceSource = 'unknown';
-
-    try {
-        if (state.assetIdText) {
-            const quote = await fetchDefaultAssetQuote(state.assetIdText);
-            finalPrice = quote.priceUsd;
-            priceSource = quote.source;
-        } else {
-            throw new Error('market asset id is missing');
-        }
-    } catch (error) {
-        throw new Error(`Automatic price fetch failed: ${(error as Error).message}`);
+    if (!state.assetIdText) {
+        throw new Error('market asset id is missing');
     }
 
-    let expectedOutcome = OUTCOME_NO;
-    if (
-        (state.direction === DIRECTION_ABOVE && finalPrice > state.threshold) ||
-        (state.direction === DIRECTION_BELOW && finalPrice < state.threshold)
-    ) {
-        expectedOutcome = OUTCOME_YES;
-    } else if (finalPrice === state.threshold) {
-        expectedOutcome = OUTCOME_DRAW;
+    const decision = evaluateResolutionQuotes({
+        assetIdText: state.assetIdText,
+        direction: state.direction,
+        threshold: state.threshold,
+        quotes: await getResolutionQuoteCandidates(state.assetIdText),
+    });
+    if (!decision.ok) {
+        throw new Error(`Resolver quote policy blocked settlement: ${decision.reason}`);
     }
+
+    const finalPrice = decision.finalPrice;
+    const expectedOutcome = decision.outcome;
 
     ui.write(`Current status: ${statusToText(state.status)}`);
     ui.write(`Threshold: $${formatPrice6(state.threshold)}`);
     ui.write(`Automatic final price: $${formatPrice6(finalPrice)}`);
-    ui.write(`Price source: ${priceSource}`);
+    ui.write(`Price sources: ${formatResolutionQuotes(decision.quotes)}`);
+    ui.write(`Spread: ${decision.spreadBps}bps`);
     ui.write(`Expected outcome: ${outcomeToText(expectedOutcome)}`);
 
     await contract.sendResolveMarket(

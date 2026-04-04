@@ -4,12 +4,7 @@ import { mnemonicToWalletKey } from '@ton/crypto';
 import { Address, Cell, SendMode, beginCell, toNano } from '@ton/core';
 import { TonClient, WalletContractV4, WalletContractV5R1, internal } from '@ton/ton';
 import {
-    DIRECTION_ABOVE,
-    DIRECTION_BELOW,
     OP_RESOLVE_MARKET,
-    OUTCOME_DRAW,
-    OUTCOME_NO,
-    OUTCOME_YES,
     STATUS_LOCKED,
     STATUS_OPEN,
     type MarketState,
@@ -18,7 +13,10 @@ import {
     statusToText,
     TonForecastMarket,
 } from '../wrappers/TonForecastMarket';
-import { fetchDefaultAssetQuote } from './lib/ston';
+// @ts-expect-error Shared resolver policy is authored in JS and consumed at runtime.
+import { evaluateResolutionQuotes, formatResolutionQuotes } from '../apps/api/src/lib/marketResolvePolicy.js';
+// @ts-expect-error Shared quote loader is authored in JS and consumed at runtime.
+import { getResolutionQuoteCandidates } from '../apps/api/src/lib/stonApi.js';
 
 const DEFAULT_MAINNET_ENDPOINT = 'https://toncenter.com/api/v2/jsonRPC';
 const DEFAULT_POLL_INTERVAL_MS = 5_000;
@@ -173,36 +171,20 @@ async function withRateLimitRetry<T>(label: string, task: () => Promise<T>): Pro
 
 async function fetchAutomaticFinalPrice(contract: OpenedTonForecastMarket) {
     const state = await withRateLimitRetry('get_market_state', () => contract.getMarketState());
-
     if (state.assetIdText) {
-        const quote = await fetchDefaultAssetQuote(state.assetIdText);
+        const decision = evaluateResolutionQuotes({
+            assetIdText: state.assetIdText,
+            direction: state.direction,
+            threshold: state.threshold,
+            quotes: await getResolutionQuoteCandidates(state.assetIdText),
+        });
         return {
-            finalPrice: quote.priceUsd,
-            priceSource: quote.source,
+            decision,
             state,
         };
     }
 
     throw new Error('Market asset id is missing');
-}
-
-function deriveExpectedOutcome(
-    direction: number,
-    threshold: bigint,
-    finalPrice: bigint,
-) {
-    if (
-        (direction === DIRECTION_ABOVE && finalPrice > threshold) ||
-        (direction === DIRECTION_BELOW && finalPrice < threshold)
-    ) {
-        return OUTCOME_YES;
-    }
-
-    if (finalPrice === threshold) {
-        return OUTCOME_DRAW;
-    }
-
-    return OUTCOME_NO;
 }
 
 async function getOnchainContractCodeHash(client: TonClient, address: Address) {
@@ -306,17 +288,19 @@ async function main() {
         process.exit(AUTO_RESOLVE_BLOCKED_EXIT_CODE);
     }
 
-    const { finalPrice, priceSource, state } = await fetchAutomaticFinalPrice(contract);
-    const expectedOutcome = deriveExpectedOutcome(
-        state.direction,
-        state.threshold,
-        finalPrice,
-    );
+    const { decision, state } = await fetchAutomaticFinalPrice(contract);
+    if (!decision.ok) {
+        throw new Error(`Resolver quote policy blocked settlement: ${decision.reason}`);
+    }
+
+    const finalPrice = decision.finalPrice;
+    const expectedOutcome = decision.outcome;
 
     console.log(`[resolver] current status=${statusToText(state.status)}`);
     console.log(`[resolver] threshold=$${formatPrice6(state.threshold)}`);
     console.log(`[resolver] final price=$${formatPrice6(finalPrice)}`);
-    console.log(`[resolver] price source=${priceSource}`);
+    console.log(`[resolver] price sources=${formatResolutionQuotes(decision.quotes)}`);
+    console.log(`[resolver] spread=${decision.spreadBps}bps`);
     console.log(`[resolver] expected outcome=${outcomeToText(expectedOutcome)}`);
 
     const body = beginCell()
