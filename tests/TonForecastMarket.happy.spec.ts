@@ -6,7 +6,6 @@ import {
     buildMarketQuestion,
     DIRECTION_ABOVE,
     ERR_OPPOSITE_SIDE_BET,
-    ERR_UNCONTESTED,
     MIN_BET,
     OUTCOME_DRAW,
     OUTCOME_YES,
@@ -152,9 +151,9 @@ describe('TonForecastMarket happy path', () => {
         expect(MIN_BET).toBe(1_000_000n);
     });
 
-    it('rejects resolve when market is uncontested', async () => {
+    it('resolves uncontested market as draw', async () => {
         await contract.sendBetYes(yesBettor.getSender(), toNano('1'));
-        const state = await contract.getMarketState();
+        let state = await contract.getMarketState();
         blockchain.now = Number(state.resolveTime + 1n);
 
         const result = await contract.sendResolveMarket(
@@ -166,9 +165,20 @@ describe('TonForecastMarket happy path', () => {
         expect(result.transactions).toHaveTransaction({
             from: resolver.address,
             to: contract.address,
-            success: false,
-            exitCode: ERR_UNCONTESTED,
+            success: true,
         });
+
+        state = await contract.getMarketState();
+        expect(state.status).toBe(STATUS_RESOLVED_DRAW);
+        expect(state.resolvedOutcome).toBe(OUTCOME_DRAW);
+
+        const yesPosition = derivePositionSummary(
+            state,
+            await contract.getUserStake(yesBettor.address),
+        );
+        expect(yesPosition.positionStatus).toBe('CLAIMABLE');
+        expect(yesPosition.payout).toBe(toNano('1'));
+        expect(yesPosition.protocolFee).toBe(0n);
     });
 
     it('refunds both sides when final price equals threshold', async () => {

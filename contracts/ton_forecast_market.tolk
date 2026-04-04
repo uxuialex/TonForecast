@@ -308,15 +308,15 @@ fun onInternalMessage(in: InMessage) {
             assert (runtime.status == STATUS_LOCKED) throw ERR_MARKET_CLOSED;
             assert (blockchain.now() >= meta.resolveTime) throw ERR_BAD_TIMESTAMPS;
             assert (runtime.resolvedOutcome == OUTCOME_NONE) throw ERR_ALREADY_RESOLVED;
-            assert (runtime.yesPool > 0) throw ERR_UNCONTESTED;
-            assert (runtime.noPool > 0) throw ERR_UNCONTESTED;
 
             runtime.finalPrice = msg.finalPrice;
-            runtime.resolvedOutcome = calculateOutcome(
-                meta.direction,
-                meta.threshold,
-                msg.finalPrice,
-            );
+            runtime.resolvedOutcome = (runtime.yesPool == 0 || runtime.noPool == 0)
+                ? OUTCOME_DRAW
+                : calculateOutcome(
+                    meta.direction,
+                    meta.threshold,
+                    msg.finalPrice,
+                );
             runtime.status = runtime.resolvedOutcome == OUTCOME_YES
                 ? STATUS_RESOLVED_YES
                 : runtime.resolvedOutcome == OUTCOME_NO
