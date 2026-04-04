@@ -135,6 +135,7 @@ Useful script entry points:
 
 - Auto-resolve one market: `MARKET_ADDRESS=EQ... npm run resolver:auto`
 - Export runtime backup: `npm run backup:runtime`
+- Run product integration checks: `npm run test:product`
 - Deploy contract via Blueprint: `npx blueprint run deployTonForecastMarket`
 - Create a market manually: `npx blueprint run createTonForecastMarket`
 - Place a bet manually: `npx blueprint run betTonForecastMarket`
@@ -148,6 +149,16 @@ Useful script entry points:
 - VPS and CI deploy flow: [docs/deployment.md](docs/deployment.md)
 - Runtime architecture: [docs/architecture.md](docs/architecture.md)
 - Contract behavior: [contracts/spec.md](contracts/spec.md)
+
+## Verification
+
+Before pushing a runtime/storage change, the useful local checks are:
+
+```bash
+npm run test:runtime
+npm run test:product
+npm run test:contracts
+```
 
 ## Notes Before Making The Repo Public
 

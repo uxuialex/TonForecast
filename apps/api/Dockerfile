@@ -2,7 +2,10 @@ FROM node:22-alpine
 
 WORKDIR /app
 
+RUN apk add --no-cache python3 make g++
+
 COPY package.json ./
+COPY package-lock.json ./
 RUN npm install --include=dev
 
 COPY apps ./apps

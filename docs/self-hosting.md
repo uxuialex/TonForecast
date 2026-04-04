@@ -75,11 +75,18 @@ Copy [`.env.example`](../.env.example) to `.env.local` and fill it.
 | `RESOLVER_POLL_INTERVAL_MS` | Optional | [scripts/autoResolveTonForecastMarket.ts](../scripts/autoResolveTonForecastMarket.ts) | How often the resolver script polls when waiting | Usually keep the default |
 | `ADMIN_TOKEN` | Recommended | [apps/api/src/server.js](../apps/api/src/server.js), [apps/miniapp/app.js](../apps/miniapp/app.js) | Secret required for admin actions | Generate a long random secret on the server |
 | `ADMIN_ALLOWED_WALLETS` | Recommended | [apps/api/src/server.js](../apps/api/src/server.js), [apps/api/src/lib/runtimeEnv.js](../apps/api/src/lib/runtimeEnv.js) | Comma-separated wallet allowlist for admin mode visibility | Wallet addresses you control |
+| `RUNTIME_BACKUP_RETENTION_COUNT` | Optional | [apps/api/src/lib/marketRegistry.js](../apps/api/src/lib/marketRegistry.js) | Maximum number of runtime backups kept on disk | Usually keep the default |
+| `RUNTIME_BACKUP_RETENTION_DAYS` | Optional | [apps/api/src/lib/marketRegistry.js](../apps/api/src/lib/marketRegistry.js) | Maximum age of runtime backups kept on disk | Usually keep the default |
+| `RUNTIME_AUDIT_RETENTION_COUNT` | Optional | [apps/api/src/lib/marketRegistry.js](../apps/api/src/lib/marketRegistry.js) | Maximum number of admin audit entries to keep | Usually keep the default |
+| `RUNTIME_AUDIT_RETENTION_DAYS` | Optional | [apps/api/src/lib/marketRegistry.js](../apps/api/src/lib/marketRegistry.js) | Maximum age of admin audit entries | Usually keep the default |
+| `RATE_LIMIT_POSITIONS_LIMIT` | Optional | [apps/api/src/lib/rateLimiter.js](../apps/api/src/lib/rateLimiter.js), [apps/api/src/server.js](../apps/api/src/server.js) | Requests per minute for `/api/positions` per client/user key | Usually keep the default |
+| `RATE_LIMIT_ACTION_WRITE_LIMIT` | Optional | [apps/api/src/lib/rateLimiter.js](../apps/api/src/lib/rateLimiter.js), [apps/api/src/server.js](../apps/api/src/server.js) | Requests per minute for create/bet/claim-style write intents | Usually keep the default |
 
 Operational note:
 
 - The resolver wallet needs a small TON balance because it sends `resolve_market` transactions.
 - With `TREASURY_ADDRESS` configured, protocol fees go to treasury instead of the resolver wallet.
+- Runtime storage now uses `better-sqlite3` instead of the experimental `node:sqlite` module.
 
 ## 4. Local Run
 
@@ -114,6 +121,7 @@ curl "http://127.0.0.1:3010/api/markets?status=OPEN"
 curl "http://127.0.0.1:3010/api/my-markets?userAddress=0:..."
 curl http://127.0.0.1:3010/api/runtime/health
 curl http://127.0.0.1:3010/tonconnect-manifest.json
+npm run test:product
 ```
 
 ## 5. How To Point The Mini App At Your Own Domain

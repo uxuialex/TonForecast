@@ -7,18 +7,20 @@
     "build:contracts": "blueprint build",
     "test:contracts": "jest --runInBand --verbose",
     "test:runtime": "node scripts/runtimeIntegrationChecks.mjs",
+    "test:product": "node scripts/productFlowChecks.mjs",
     "deploy:contract": "blueprint run",
     "resolver:auto": "ts-node scripts/autoResolveTonForecastMarket.ts",
     "backup:runtime": "node scripts/exportRuntimeBackup.mjs",
     "restore:runtime": "node scripts/restoreRuntimeBackup.mjs"
   },
   "dependencies": {
-    "@ton/core": "~0"
+    "@ton/core": "~0",
+    "better-sqlite3": "^12.8.0"
   },
   "devDependencies": {
     "@tact-lang/compiler": ">=1.6.13 <2.0.0",
-    "@ton/blueprint": ">=0.40.0",
     "@ton-community/func-js": ">=0.10.0",
+    "@ton/blueprint": ">=0.40.0",
     "@ton/crypto": "^3.3.0",
     "@ton/sandbox": ">=0.37.0",
     "@ton/test-utils": ">=0.11.0",

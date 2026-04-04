@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { readAssetIcon } from "./lib/assets.js";
 import { getBuildInfo } from "./lib/buildInfo.js";
+import { enforceRateLimit } from "./lib/rateLimiter.js";
 import {
   appendAdminAuditEntry,
   exportRuntimeBackup,
@@ -58,7 +59,12 @@ function errorResponse(error) {
     {
       error: error instanceof Error ? error.message : String(error),
     },
-    { status },
+    {
+      status,
+      headers: {
+        ...(error?.headers ?? {}),
+      },
+    },
   );
 }
 
@@ -137,6 +143,10 @@ function buildRuntimeHealthPayload() {
   };
 }
 
+function createRateLimitHeaders(policyName, request, keyParts = []) {
+  return enforceRateLimit(policyName, request, keyParts);
+}
+
 async function readJson(request) {
   try {
     return await request.json();
@@ -189,7 +199,8 @@ export async function handleRequest(request) {
 
     if (url.pathname === "/api/markets") {
       const status = url.searchParams.get("status") ?? undefined;
-      return json({ items: await listMarkets(status) });
+      const rateLimitHeaders = createRateLimitHeaders("markets", request, [status ?? "all"]);
+      return json({ items: await listMarkets(status) }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname.startsWith("/api/markets/")) {
@@ -208,12 +219,18 @@ export async function handleRequest(request) {
         return json({ error: "userAddress is required" }, { status: 400 });
       }
 
-      return json({ items: await listUserMarkets(userAddress) });
+      const rateLimitHeaders = createRateLimitHeaders("my_markets", request, [userAddress]);
+      return json({ items: await listUserMarkets(userAddress) }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/session") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? ""],
+      );
       requireAdmin(request);
-      return json({ ok: true });
+      return json({ ok: true }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/eligibility") {
@@ -226,18 +243,33 @@ export async function handleRequest(request) {
     }
 
     if (url.pathname === "/api/admin/markets") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "markets"],
+      );
       requireAdmin(request);
       const status = url.searchParams.get("status") ?? undefined;
-      return json({ items: await listAdminMarkets(status) });
+      return json({ items: await listAdminMarkets(status) }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/audit-log") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "audit-log"],
+      );
       requireAdmin(request);
       const limit = Number(url.searchParams.get("limit") ?? 100);
-      return json({ items: listAdminAuditEntries(limit) });
+      return json({ items: listAdminAuditEntries(limit) }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/metrics") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "metrics"],
+      );
       requireAdmin(request);
       return json(
         getRuntimeMetricsSnapshot({
@@ -246,27 +278,48 @@ export async function handleRequest(request) {
           autoResolver: getAutoResolverStatus(),
           sourceMonitor: await getSourceMonitorSnapshot("TON"),
         }),
+        { headers: rateLimitHeaders },
       );
     }
 
     if (url.pathname === "/api/admin/resolver/status") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "resolver-status"],
+      );
       requireAdmin(request);
-      return json(getAutoResolverStatus());
+      return json(getAutoResolverStatus(), { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/source-monitor") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "source-monitor"],
+      );
       requireAdmin(request);
       const asset = url.searchParams.get("asset") ?? "TON";
-      return json(await getSourceMonitorSnapshot(asset));
+      return json(await getSourceMonitorSnapshot(asset), { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/runtime/backups") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_read",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "runtime-backups"],
+      );
       requireAdmin(request);
       const limit = Number(url.searchParams.get("limit") ?? 12);
-      return json({ items: listRuntimeBackups(limit) });
+      return json({ items: listRuntimeBackups(limit) }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/runtime/backup" && request.method === "POST") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_write",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "runtime-backup"],
+      );
       const adminWallet = requireAdmin(request);
       const body = await readJson(request);
       const backup = exportRuntimeBackup(body.reason ?? "admin");
@@ -275,10 +328,15 @@ export async function handleRequest(request) {
         action: "runtime.backup",
         details: backup,
       });
-      return json(backup);
+      return json(backup, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/admin/runtime/restore" && request.method === "POST") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_write",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "runtime-restore"],
+      );
       const adminWallet = requireAdmin(request);
       const body = await readJson(request);
       const restore = restoreRuntimeBackup(body.fileName);
@@ -288,10 +346,15 @@ export async function handleRequest(request) {
         action: "runtime.restore",
         details: restore,
       });
-      return json(restore);
+      return json(restore, { headers: rateLimitHeaders });
     }
 
     if (url.pathname.endsWith("/retry-resolve") && request.method === "POST") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_write",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "retry-resolve"],
+      );
       const adminWallet = requireAdmin(request);
       const contractAddress = parseAddress(
         decodeURIComponent(url.pathname.split("/").slice(-2)[0] ?? ""),
@@ -308,10 +371,15 @@ export async function handleRequest(request) {
         action: "market.retry_resolve",
         contractAddress,
       });
-      return json({ ok: true, contractAddress });
+      return json({ ok: true, contractAddress }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname.endsWith("/auto-resolve-block") && request.method === "POST") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_write",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "auto-resolve-block"],
+      );
       const adminWallet = requireAdmin(request);
       const contractAddress = parseAddress(
         decodeURIComponent(url.pathname.split("/").slice(-2)[0] ?? ""),
@@ -334,10 +402,15 @@ export async function handleRequest(request) {
           reason: body.blocked === false ? "" : String(body.reason ?? "").trim(),
         },
       });
-      return json(nextRecord);
+      return json(nextRecord, { headers: rateLimitHeaders });
     }
 
     if (url.pathname.startsWith("/api/admin/markets/") && request.method === "POST") {
+      const rateLimitHeaders = createRateLimitHeaders(
+        "admin_write",
+        request,
+        [request.headers.get("x-admin-wallet") ?? "", "market-flags"],
+      );
       const adminWallet = requireAdmin(request);
       const contractAddress = parseAddress(
         decodeURIComponent(url.pathname.split("/").pop() ?? ""),
@@ -365,7 +438,7 @@ export async function handleRequest(request) {
           legacyReason: body.legacy === true ? String(body.legacyReason ?? "").trim() : "",
         },
       });
-      return json(nextRecord);
+      return json(nextRecord, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/positions") {
@@ -377,7 +450,11 @@ export async function handleRequest(request) {
         return json({ error: "userAddress is required" }, { status: 400 });
       }
 
-      return json({ items: await listPositions(userAddress, { fresh, full, cachedOnly }) });
+      const rateLimitHeaders = createRateLimitHeaders("positions", request, [userAddress]);
+      return json(
+        { items: await listPositions(userAddress, { fresh, full, cachedOnly }) },
+        { headers: rateLimitHeaders },
+      );
     }
 
     if (url.pathname.startsWith("/api/positions/market/")) {
@@ -388,9 +465,13 @@ export async function handleRequest(request) {
         return json({ error: "userAddress is required" }, { status: 400 });
       }
 
+      const rateLimitHeaders = createRateLimitHeaders("single_position", request, [
+        userAddress,
+        contractAddress,
+      ]);
       return json({
         item: await getPositionForUser(contractAddress, userAddress, { fresh }),
-      });
+      }, { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/create-context") {
@@ -398,24 +479,35 @@ export async function handleRequest(request) {
       const durationSec = url.searchParams.get("durationSec");
       const direction = url.searchParams.get("direction") ?? "above";
       const threshold = url.searchParams.get("threshold");
-      return json(await getCreateContext(asset, durationSec, direction, threshold));
+      const rateLimitHeaders = createRateLimitHeaders("create_context", request, [
+        asset ?? "",
+        durationSec ?? "",
+        direction,
+      ]);
+      return json(await getCreateContext(asset, durationSec, direction, threshold), {
+        headers: rateLimitHeaders,
+      });
     }
 
     if (url.pathname === "/api/actions/create-intent" && request.method === "POST") {
-      return json(await createMarketIntent(await readJson(request)));
+      const rateLimitHeaders = createRateLimitHeaders("action_write", request, ["create-intent"]);
+      return json(await createMarketIntent(await readJson(request)), { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/actions/create-confirm" && request.method === "POST") {
+      const rateLimitHeaders = createRateLimitHeaders("action_write", request, ["create-confirm"]);
       const body = await readJson(request);
-      return json(await confirmCreate(body.contractAddress));
+      return json(await confirmCreate(body.contractAddress), { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/actions/bet-intent" && request.method === "POST") {
-      return json(await createBetIntent(await readJson(request)));
+      const rateLimitHeaders = createRateLimitHeaders("action_write", request, ["bet-intent"]);
+      return json(await createBetIntent(await readJson(request)), { headers: rateLimitHeaders });
     }
 
     if (url.pathname === "/api/actions/claim-intent" && request.method === "POST") {
-      return json(await createClaimIntent(await readJson(request)));
+      const rateLimitHeaders = createRateLimitHeaders("action_write", request, ["claim-intent"]);
+      return json(await createClaimIntent(await readJson(request)), { headers: rateLimitHeaders });
     }
 
     return json({ error: "Not found" }, { status: 404 });

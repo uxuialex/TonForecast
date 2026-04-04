@@ -1,9 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 
 const pendingCreates = new Map();
 const PENDING_TTL_MS = 2 * 60 * 1000;
+const DEFAULT_BACKUP_RETENTION_COUNT = 20;
+const DEFAULT_BACKUP_RETENTION_DAYS = 14;
+const DEFAULT_AUDIT_RETENTION_COUNT = 5_000;
+const DEFAULT_AUDIT_RETENTION_DAYS = 30;
 
 let db = null;
 let dbFilePath = null;
@@ -66,6 +70,93 @@ function uniqueNonEmpty(values) {
   return [...new Set((values ?? []).filter(Boolean))];
 }
 
+function readPositiveEnvInt(name, fallback) {
+  const numeric = Number(process.env[name] ?? fallback);
+  if (!Number.isFinite(numeric) || numeric <= 0) {
+    return fallback;
+  }
+
+  return Math.floor(numeric);
+}
+
+function getBackupRetentionCount() {
+  return readPositiveEnvInt("RUNTIME_BACKUP_RETENTION_COUNT", DEFAULT_BACKUP_RETENTION_COUNT);
+}
+
+function getBackupRetentionDays() {
+  return readPositiveEnvInt("RUNTIME_BACKUP_RETENTION_DAYS", DEFAULT_BACKUP_RETENTION_DAYS);
+}
+
+function getAuditRetentionCount() {
+  return readPositiveEnvInt("RUNTIME_AUDIT_RETENTION_COUNT", DEFAULT_AUDIT_RETENTION_COUNT);
+}
+
+function getAuditRetentionDays() {
+  return readPositiveEnvInt("RUNTIME_AUDIT_RETENTION_DAYS", DEFAULT_AUDIT_RETENTION_DAYS);
+}
+
+function getRuntimeBackupEntries() {
+  ensureRuntimeDir();
+  const runtimeBackupDir = getRuntimeBackupDir();
+  return fs
+    .readdirSync(runtimeBackupDir, { withFileTypes: true })
+    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .map((entry) => {
+      const filePath = path.join(runtimeBackupDir, entry.name);
+      const stats = fs.statSync(filePath);
+      return {
+        fileName: entry.name,
+        filePath,
+        sizeBytes: stats.size,
+        modifiedAt: stats.mtime.toISOString(),
+        modifiedAtMs: stats.mtimeMs,
+      };
+    })
+    .sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt));
+}
+
+function pruneRuntimeBackups() {
+  const backups = getRuntimeBackupEntries();
+  const retentionCount = getBackupRetentionCount();
+  const retentionDays = getBackupRetentionDays();
+  const cutoffMs = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
+  let removed = 0;
+
+  backups.forEach((entry, index) => {
+    const removeByCount = index >= retentionCount;
+    const removeByAge = entry.modifiedAtMs < cutoffMs;
+    if (!removeByCount && !removeByAge) {
+      return;
+    }
+
+    fs.rmSync(entry.filePath, { force: true });
+    removed += 1;
+  });
+
+  return removed;
+}
+
+function pruneAdminAuditLog(database) {
+  const retentionCount = getAuditRetentionCount();
+  const retentionDays = getAuditRetentionDays();
+  const cutoffSec = Math.floor(Date.now() / 1000) - retentionDays * 24 * 60 * 60;
+
+  database.prepare(`
+    DELETE FROM admin_audit_log
+    WHERE created_at < ?
+  `).run(cutoffSec);
+
+  database.prepare(`
+    DELETE FROM admin_audit_log
+    WHERE id NOT IN (
+      SELECT id
+      FROM admin_audit_log
+      ORDER BY created_at DESC, id DESC
+      LIMIT ?
+    )
+  `).run(retentionCount);
+}
+
 function getDb() {
   const nextDbFilePath = getRuntimeDbFile();
   if (db && dbFilePath === nextDbFilePath) {
@@ -82,12 +173,12 @@ function getDb() {
   }
 
   ensureRuntimeDir();
-  db = new DatabaseSync(nextDbFilePath);
+  db = new Database(nextDbFilePath);
   dbFilePath = nextDbFilePath;
+  db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = NORMAL");
+  db.pragma("busy_timeout = 5000");
   db.exec(`
-    PRAGMA journal_mode = WAL;
-    PRAGMA synchronous = NORMAL;
-
     CREATE TABLE IF NOT EXISTS meta (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
@@ -615,12 +706,14 @@ export function appendAdminAuditEntry({ actor = "admin", action, contractAddress
 
   const createdAt = Math.floor(Date.now() / 1000);
   const payload = JSON.stringify(details ?? {});
-  const result = withTransaction((tx) =>
-    tx.prepare(`
+  const result = withTransaction((tx) => {
+    const insertResult = tx.prepare(`
       INSERT INTO admin_audit_log (created_at, actor, action, contract_address, details_json)
       VALUES (?, ?, ?, ?, ?)
-    `).run(createdAt, String(actor || "admin"), normalizedAction, contractAddress, payload),
-  );
+    `).run(createdAt, String(actor || "admin"), normalizedAction, contractAddress, payload);
+    pruneAdminAuditLog(tx);
+    return insertResult;
+  });
 
   return {
     id: Number(result.lastInsertRowid ?? 0),
@@ -663,6 +756,7 @@ export function listAdminAuditEntries(limit = 100) {
 export function getRuntimeStoreStats() {
   const database = getDb();
   const runtimeDbFile = getRuntimeDbFile();
+  const backupEntries = getRuntimeBackupEntries();
   return {
     dbFile: runtimeDbFile,
     dbFileSizeBytes: fs.existsSync(runtimeDbFile) ? fs.statSync(runtimeDbFile).size : 0,
@@ -676,6 +770,11 @@ export function getRuntimeStoreStats() {
     auditEntryCount: Number(
       database.prepare("SELECT COUNT(*) AS count FROM admin_audit_log").get().count ?? 0,
     ),
+    backupCount: backupEntries.length,
+    backupRetentionCount: getBackupRetentionCount(),
+    backupRetentionDays: getBackupRetentionDays(),
+    auditRetentionCount: getAuditRetentionCount(),
+    auditRetentionDays: getAuditRetentionDays(),
   };
 }
 
@@ -702,6 +801,7 @@ export function exportRuntimeBackup(reason = "manual") {
   };
 
   fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+  pruneRuntimeBackups();
 
   return {
     filePath,
@@ -714,23 +814,10 @@ export function exportRuntimeBackup(reason = "manual") {
 }
 
 export function listRuntimeBackups(limit = 12) {
-  ensureRuntimeDir();
-  const runtimeBackupDir = getRuntimeBackupDir();
+  pruneRuntimeBackups();
   const normalizedLimit = Math.max(1, Math.min(100, Number(limit) || 12));
-  return fs
-    .readdirSync(runtimeBackupDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .map((entry) => {
-      const filePath = path.join(runtimeBackupDir, entry.name);
-      const stats = fs.statSync(filePath);
-      return {
-        fileName: entry.name,
-        filePath,
-        sizeBytes: stats.size,
-        modifiedAt: stats.mtime.toISOString(),
-      };
-    })
-    .sort((left, right) => right.modifiedAt.localeCompare(left.modifiedAt))
+  return getRuntimeBackupEntries()
+    .map(({ modifiedAtMs, ...entry }) => entry)
     .slice(0, normalizedLimit);
 }
 
@@ -760,7 +847,9 @@ export function restoreRuntimeBackup(fileName) {
   const normalizedStore = normalizeImportedStore(payload);
   withTransaction((tx) => {
     replaceRuntimeStore(tx, normalizedStore);
+    pruneAdminAuditLog(tx);
   });
+  pruneRuntimeBackups();
 
   return {
     fileName: normalizedFileName,
