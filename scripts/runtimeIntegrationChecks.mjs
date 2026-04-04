@@ -244,6 +244,7 @@ async function testServerAdminRoutes() {
     const auditPayload = await auditResponse.json();
     assert.ok(auditPayload.items.length >= 1);
     assert.equal(auditPayload.items[0].action, "market.flags");
+    assert.equal(auditPayload.items[0].actor, `wallet:${sampleContract}`);
 
     delete process.env.ADMIN_TOKEN;
     delete process.env.ADMIN_ALLOWED_WALLETS;

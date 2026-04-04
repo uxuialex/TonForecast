@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import { readAssetIcon } from "./lib/assets.js";
 import {
   appendAdminAuditEntry,
@@ -64,18 +65,35 @@ function requireAdmin(request) {
   }
 
   const providedToken = request.headers.get("x-admin-token")?.trim();
-  if (!providedToken || providedToken !== configuredToken) {
+  if (!tokensMatch(providedToken, configuredToken)) {
     throw Object.assign(new Error("Admin access denied"), { statusCode: 403 });
   }
 
   const providedWallet = request.headers.get("x-admin-wallet")?.trim();
-  if (!isAdminWalletAllowed(providedWallet)) {
+  const normalizedWallet = normalizeWalletCandidate(providedWallet);
+  if (!isAdminWalletAllowed(normalizedWallet)) {
     throw Object.assign(new Error("Admin wallet is not allowed"), { statusCode: 403 });
   }
+
+  return normalizedWallet;
 }
 
-function getAdminActor(request) {
-  return request.headers.get("x-admin-actor")?.trim() || "miniapp-admin";
+function getAdminActor(adminWallet) {
+  return adminWallet ? `wallet:${adminWallet}` : "miniapp-admin";
+}
+
+function tokensMatch(providedToken, configuredToken) {
+  if (!providedToken || !configuredToken) {
+    return false;
+  }
+
+  const provided = Buffer.from(String(providedToken));
+  const configured = Buffer.from(String(configuredToken));
+  if (provided.length !== configured.length) {
+    return false;
+  }
+
+  return timingSafeEqual(provided, configured);
 }
 
 function normalizeWalletCandidate(value) {
@@ -217,11 +235,11 @@ export async function handleRequest(request) {
     }
 
     if (url.pathname === "/api/admin/runtime/backup" && request.method === "POST") {
-      requireAdmin(request);
+      const adminWallet = requireAdmin(request);
       const body = await readJson(request);
       const backup = exportRuntimeBackup(body.reason ?? "admin");
       appendAdminAuditEntry({
-        actor: getAdminActor(request),
+        actor: getAdminActor(adminWallet),
         action: "runtime.backup",
         details: backup,
       });
@@ -229,7 +247,7 @@ export async function handleRequest(request) {
     }
 
     if (url.pathname.endsWith("/retry-resolve") && request.method === "POST") {
-      requireAdmin(request);
+      const adminWallet = requireAdmin(request);
       const contractAddress = parseAddress(
         decodeURIComponent(url.pathname.split("/").slice(-2)[0] ?? ""),
       ).toString();
@@ -241,7 +259,7 @@ export async function handleRequest(request) {
       invalidateMarketViewCache();
       retryAutoResolve(contractAddress, 1_000);
       appendAdminAuditEntry({
-        actor: getAdminActor(request),
+        actor: getAdminActor(adminWallet),
         action: "market.retry_resolve",
         contractAddress,
       });
@@ -249,7 +267,7 @@ export async function handleRequest(request) {
     }
 
     if (url.pathname.endsWith("/auto-resolve-block") && request.method === "POST") {
-      requireAdmin(request);
+      const adminWallet = requireAdmin(request);
       const contractAddress = parseAddress(
         decodeURIComponent(url.pathname.split("/").slice(-2)[0] ?? ""),
       ).toString();
@@ -263,7 +281,7 @@ export async function handleRequest(request) {
       });
       invalidateMarketViewCache();
       appendAdminAuditEntry({
-        actor: getAdminActor(request),
+        actor: getAdminActor(adminWallet),
         action: body.blocked === false ? "market.unblock_auto_resolve" : "market.block_auto_resolve",
         contractAddress,
         details: {
@@ -275,7 +293,7 @@ export async function handleRequest(request) {
     }
 
     if (url.pathname.startsWith("/api/admin/markets/") && request.method === "POST") {
-      requireAdmin(request);
+      const adminWallet = requireAdmin(request);
       const contractAddress = parseAddress(
         decodeURIComponent(url.pathname.split("/").pop() ?? ""),
       ).toString();
@@ -292,7 +310,7 @@ export async function handleRequest(request) {
       });
       invalidateMarketViewCache();
       appendAdminAuditEntry({
-        actor: getAdminActor(request),
+        actor: getAdminActor(adminWallet),
         action: "market.flags",
         contractAddress,
         details: {

@@ -30,6 +30,19 @@ const MARKET_FILTER_OPTIONS = [
   { value: "RESOLVED", label: "Resolved" },
 ];
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 function getTokenIconUrl(symbol) {
   return `/api/assets/icons/${encodeURIComponent(symbol)}?v=${ASSET_ICON_VERSION}`;
 }
@@ -42,17 +55,19 @@ function tokenIconHtml(symbol, iconUrl = getTokenIconUrl(symbol), variant = "def
     variant === "badge"
       ? "token-icon token-icon--letter token-icon--badge-letter"
       : "token-icon token-icon--letter";
-  const letter = `<span class="${fallbackClass}" style="background:${color}">${symbol[0]}</span>`;
+  const safeSymbol = escapeHtml(symbol);
+  const safeIconUrl = escapeAttr(iconUrl);
+  const letter = `<span class="${fallbackClass}" style="background:${color}">${safeSymbol[0] ?? ""}</span>`;
   if (!iconUrl) return letter;
   return (
-    `<img class="${iconClass}" src="${iconUrl}" alt="${symbol}" ` +
+    `<img class="${iconClass}" src="${safeIconUrl}" alt="${safeSymbol}" ` +
     `onerror="this.style.display='none';this.nextElementSibling.style.display='flex'" />` +
-    `<span class="${fallbackClass}" style="display:none;background:${color}">${symbol[0]}</span>`
+    `<span class="${fallbackClass}" style="display:none;background:${color}">${safeSymbol[0] ?? ""}</span>`
   );
 }
 
 function assetBadgeHtml(symbol, iconUrl) {
-  return `<span class="asset-badge ${getAssetTone(symbol)}">${tokenIconHtml(symbol, iconUrl, "badge")}<span>${symbol}</span></span>`;
+  return `<span class="asset-badge ${getAssetTone(symbol)}">${tokenIconHtml(symbol, iconUrl, "badge")}<span>${escapeHtml(symbol)}</span></span>`;
 }
 
 const tabs = document.querySelectorAll(".tab");
@@ -723,13 +738,13 @@ function renderUserMarkets(items) {
   setUserMarketsSyncMeta(state.userMarketsLoading ? "Refreshing tracked markets..." : "Tracked markets synced.");
   userMarketsListEl.innerHTML = items
     .map((market) => `
-      <article class="position-row user-market-row" data-market-id="${market.marketId}">
+      <article class="position-row user-market-row" data-market-id="${escapeAttr(market.marketId)}">
         <div>
           <div class="position-header">
-            <p class="position-title">${market.question}</p>
+            <p class="position-title">${escapeHtml(market.question)}</p>
             <a
               class="market-link position-link"
-              href="${getExplorerUrl(market.contractAddress)}"
+              href="${escapeAttr(getExplorerUrl(market.contractAddress))}"
               target="_blank"
               rel="noreferrer noopener"
               aria-label="Open market on explorer"
@@ -740,11 +755,11 @@ function renderUserMarkets(items) {
             ${buildMarketFlagsHtml(market)}
           </div>
           <div class="user-market-summary">
-            <span>State: ${market.marketStatusLabel}</span>
-            <span>Positions: ${market.positionCount}</span>
-            ${market.claimableCount ? `<span>Claimable: ${market.claimableCount}</span>` : ""}
-            <span>Close: ${formatMarketDateTime(market.closeAt)}</span>
-            <span>Resolve: ${formatMarketDateTime(market.resolveAt)}</span>
+            <span>State: ${escapeHtml(market.marketStatusLabel)}</span>
+            <span>Positions: ${escapeHtml(market.positionCount)}</span>
+            ${market.claimableCount ? `<span>Claimable: ${escapeHtml(market.claimableCount)}</span>` : ""}
+            <span>Close: ${escapeHtml(formatMarketDateTime(market.closeAt))}</span>
+            <span>Resolve: ${escapeHtml(formatMarketDateTime(market.resolveAt))}</span>
           </div>
         </div>
       </article>
@@ -939,7 +954,6 @@ async function requestAdminJson(url, options = {}) {
   const headers = new Headers(options.headers ?? {});
   headers.set("x-admin-token", state.adminToken);
   headers.set("x-admin-wallet", state.wallet.account.address);
-  headers.set("x-admin-actor", state.wallet?.account?.address ? `wallet:${state.wallet.account.address}` : "miniapp-admin");
   return requestJson(url, {
     ...options,
     headers,
@@ -1001,13 +1015,13 @@ function renderAdminMarkets(items) {
 
   adminListEl.innerHTML = items
     .map((market) => `
-      <article class="position-row admin-market-row" data-admin-market-address="${market.contractAddress}">
+      <article class="position-row admin-market-row" data-admin-market-address="${escapeAttr(market.contractAddress)}">
         <div>
           <div class="position-header">
-            <p class="position-title">${market.question}</p>
+            <p class="position-title">${escapeHtml(market.question)}</p>
             <a
               class="market-link position-link"
-              href="${getExplorerUrl(market.contractAddress)}"
+              href="${escapeAttr(getExplorerUrl(market.contractAddress))}"
               target="_blank"
               rel="noreferrer noopener"
               aria-label="Open market on explorer"
@@ -1018,15 +1032,15 @@ function renderAdminMarkets(items) {
             ${buildMarketFlagsHtml(market)}
           </div>
           <div class="admin-market-summary">
-            <span>Status: ${market.statusLabel}</span>
-            <span>Contract: ${shortAddress(market.contractAddress)}</span>
-            <span>Treasury: ${shortAddress(market.treasuryAddress ?? market.resolverAddress)}</span>
-            ${market.lastResolveSourceSummary ? `<span>Sources: ${market.lastResolveSourceSummary}</span>` : ""}
-            ${market.lastResolveDecisionReason ? `<span>Resolver note: ${market.lastResolveDecisionReason}</span>` : ""}
-            ${market.lastResolvedFinalPrice ? `<span>Stored price: $${market.lastResolvedFinalPrice}</span>` : ""}
-            ${market.adminHiddenReason ? `<span>Hide note: ${market.adminHiddenReason}</span>` : ""}
-            ${market.adminLegacyReason ? `<span>Legacy note: ${market.adminLegacyReason}</span>` : ""}
-            ${market.autoResolveBlockedReason ? `<span>Resolver: ${market.autoResolveBlockedReason}</span>` : ""}
+            <span>Status: ${escapeHtml(market.statusLabel)}</span>
+            <span>Contract: ${escapeHtml(shortAddress(market.contractAddress))}</span>
+            <span>Treasury: ${escapeHtml(shortAddress(market.treasuryAddress ?? market.resolverAddress))}</span>
+            ${market.lastResolveSourceSummary ? `<span>Sources: ${escapeHtml(market.lastResolveSourceSummary)}</span>` : ""}
+            ${market.lastResolveDecisionReason ? `<span>Resolver note: ${escapeHtml(market.lastResolveDecisionReason)}</span>` : ""}
+            ${market.lastResolvedFinalPrice ? `<span>Stored price: $${escapeHtml(market.lastResolvedFinalPrice)}</span>` : ""}
+            ${market.adminHiddenReason ? `<span>Hide note: ${escapeHtml(market.adminHiddenReason)}</span>` : ""}
+            ${market.adminLegacyReason ? `<span>Legacy note: ${escapeHtml(market.adminLegacyReason)}</span>` : ""}
+            ${market.autoResolveBlockedReason ? `<span>Resolver: ${escapeHtml(market.autoResolveBlockedReason)}</span>` : ""}
           </div>
         </div>
         <div class="admin-market-actions">
@@ -1071,14 +1085,14 @@ function renderAdminAuditLog(items) {
       <article class="position-row admin-audit-row">
         <div>
           <div class="position-header">
-            <p class="position-title">${entry.action}</p>
-            <span class="position-meta">${formatMarketDateTime(entry.createdAt)}</span>
+            <p class="position-title">${escapeHtml(entry.action)}</p>
+            <span class="position-meta">${escapeHtml(formatMarketDateTime(entry.createdAt))}</span>
           </div>
           <div class="admin-market-summary">
-            <span>Actor: ${entry.actor}</span>
-            ${entry.contractAddress ? `<span>Market: ${shortAddress(entry.contractAddress)}</span>` : ""}
-            ${entry.details?.reason ? `<span>Reason: ${entry.details.reason}</span>` : ""}
-            ${entry.details?.fileName ? `<span>Backup: ${entry.details.fileName}</span>` : ""}
+            <span>Actor: ${escapeHtml(entry.actor)}</span>
+            ${entry.contractAddress ? `<span>Market: ${escapeHtml(shortAddress(entry.contractAddress))}</span>` : ""}
+            ${entry.details?.reason ? `<span>Reason: ${escapeHtml(entry.details.reason)}</span>` : ""}
+            ${entry.details?.fileName ? `<span>Backup: ${escapeHtml(entry.details.fileName)}</span>` : ""}
           </div>
         </div>
       </article>
@@ -1239,8 +1253,8 @@ function renderPrices(items) {
         <div class="ticker-pill">
           ${tokenIconHtml(item.asset, item.iconUrl)}
           <div class="ticker-info">
-            <span class="ticker-sym">${item.asset}</span>
-            <span class="ticker-price">$${item.priceUsd}</span>
+            <span class="ticker-sym">${escapeHtml(item.asset)}</span>
+            <span class="ticker-price">$${escapeHtml(item.priceUsd)}</span>
           </div>
         </div>
       `,
@@ -1327,7 +1341,7 @@ async function loadPrices() {
     state.prices = payload.items ?? [];
     renderPrices(state.prices);
   } catch (error) {
-    priceStripEl.innerHTML = `<div class="ticker-pill is-loading">Prices unavailable: ${error.message}</div>`;
+    priceStripEl.innerHTML = `<div class="ticker-pill is-loading">Prices unavailable: ${escapeHtml(error.message)}</div>`;
   }
 }
 
@@ -1419,14 +1433,14 @@ function renderMarkets(items) {
       const isPendingCreate = state.pendingCreateAddress === market.contractAddress;
 
       return `
-        <article class="market-card ${isPendingCreate ? "is-pending-market" : ""}" data-market-address="${market.contractAddress}" data-effective-status="${effectiveStatus}">
+        <article class="market-card ${isPendingCreate ? "is-pending-market" : ""}" data-market-address="${escapeAttr(market.contractAddress)}" data-effective-status="${escapeAttr(effectiveStatus)}">
           <div class="market-topline">
             ${assetBadgeHtml(market.token, market.iconUrl)}
             <div class="market-topline__meta">
-              <span class="${getDisplayStatusClass(market, effectiveStatus)}">${market.statusLabel}</span>
+              <span class="${getDisplayStatusClass(market, effectiveStatus)}">${escapeHtml(market.statusLabel)}</span>
               <a
                 class="market-link"
-                href="${getExplorerUrl(market.contractAddress)}"
+                href="${escapeAttr(getExplorerUrl(market.contractAddress))}"
                 target="_blank"
                 rel="noreferrer noopener"
                 aria-label="Open market on explorer"
@@ -1437,17 +1451,17 @@ function renderMarkets(items) {
           <div class="position-row__meta">
             ${buildMarketFlagsHtml(market)}
           </div>
-          <h3>${market.question}</h3>
+          <h3>${escapeHtml(market.question)}</h3>
           <dl class="market-stats">
-            <div><dt>Current</dt><dd>${market.currentPriceLabel}</dd></div>
-            <div><dt>Duration</dt><dd>${formatDurationLabel(market.durationSec)}</dd></div>
-            <div><dt data-market-status-text>${statusMeta.statusText}</dt><dd data-market-status-value>${statusMeta.statusValue}</dd></div>
-            <div><dt>Close</dt><dd>${formatMarketDateTime(market.closeAt)}</dd></div>
-            <div><dt>Up pool</dt><dd>${market.yesPoolLabel}</dd></div>
-            <div><dt>Down pool</dt><dd>${market.noPoolLabel}</dd></div>
-            <div><dt>Result</dt><dd>${market.outcomeLabel}</dd></div>
-            <div><dt>Final price</dt><dd>${market.finalPriceLabel}</dd></div>
-            <div><dt>Resolve</dt><dd>${formatMarketDateTime(market.resolveAt)}</dd></div>
+            <div><dt>Current</dt><dd>${escapeHtml(market.currentPriceLabel)}</dd></div>
+            <div><dt>Duration</dt><dd>${escapeHtml(formatDurationLabel(market.durationSec))}</dd></div>
+            <div><dt data-market-status-text>${escapeHtml(statusMeta.statusText)}</dt><dd data-market-status-value>${escapeHtml(statusMeta.statusValue)}</dd></div>
+            <div><dt>Close</dt><dd>${escapeHtml(formatMarketDateTime(market.closeAt))}</dd></div>
+            <div><dt>Up pool</dt><dd>${escapeHtml(market.yesPoolLabel)}</dd></div>
+            <div><dt>Down pool</dt><dd>${escapeHtml(market.noPoolLabel)}</dd></div>
+            <div><dt>Result</dt><dd>${escapeHtml(market.outcomeLabel)}</dd></div>
+            <div><dt>Final price</dt><dd>${escapeHtml(market.finalPriceLabel)}</dd></div>
+            <div><dt>Resolve</dt><dd>${escapeHtml(formatMarketDateTime(market.resolveAt))}</dd></div>
           </dl>
           <div class="card-actions">
             <button class="yes-button ${pendingBetSide === "YES" ? "is-busy" : ""}" data-action="bet" data-side="YES" ${canBet ? "" : "disabled"}>${pendingBetSide === "YES" ? "Confirming..." : buildBetButtonLabel(market, "YES")}</button>
@@ -1455,9 +1469,9 @@ function renderMarkets(items) {
           </div>
           ${
             notice
-              ? `<p class="market-note inline-notice inline-notice--${notice.type}">${notice.message}</p>`
+              ? `<p class="market-note inline-notice inline-notice--${notice.type}">${escapeHtml(notice.message)}</p>`
               : actionHint
-                ? `<p class="market-note inline-notice inline-notice--muted">${actionHint}</p>`
+                ? `<p class="market-note inline-notice inline-notice--muted">${escapeHtml(actionHint)}</p>`
                 : ""
           }
         </article>
@@ -1518,13 +1532,13 @@ function renderPositions(items) {
   positionsListEl.innerHTML = visibleItems
     .map(
       (position) => `
-        <article class="position-row" data-position-id="${position.id}" data-market-id="${position.marketId}">
+        <article class="position-row" data-position-id="${escapeAttr(position.id)}" data-market-id="${escapeAttr(position.marketId)}">
           <div>
             <div class="position-header">
-              <p class="position-title">${position.question}</p>
+              <p class="position-title">${escapeHtml(position.question)}</p>
               <a
                 class="market-link position-link"
-                href="${getExplorerUrl(position.contractAddress)}"
+                href="${escapeAttr(getExplorerUrl(position.contractAddress))}"
                 target="_blank"
                 rel="noreferrer noopener"
                 aria-label="Open position market on explorer"
@@ -1535,27 +1549,27 @@ function renderPositions(items) {
               ${buildMarketFlagsHtml(position)}
             </div>
             <div class="position-facts">
-              <p class="position-meta">Your bet: ${position.betLabel}</p>
-              <p class="position-meta">Result: ${position.resultLabel}</p>
-              <p class="position-meta">Stake: ${position.amountLabel}</p>
-              <p class="position-meta">Pool: ${position.totalPoolLabel}</p>
+              <p class="position-meta">Your bet: ${escapeHtml(position.betLabel)}</p>
+              <p class="position-meta">Result: ${escapeHtml(position.resultLabel)}</p>
+              <p class="position-meta">Stake: ${escapeHtml(position.amountLabel)}</p>
+              <p class="position-meta">Pool: ${escapeHtml(position.totalPoolLabel)}</p>
               ${
                 (position.claimable || position.claimed) && position.marketOutcome !== "DRAW"
-                  ? `<p class="position-meta">Your share: ${position.shareLabel}</p>`
+                  ? `<p class="position-meta">Your share: ${escapeHtml(position.shareLabel)}</p>`
                   : ""
               }
               ${
                 Number(position.protocolFeeTon ?? 0) > 0
-                  ? `<p class="position-meta">Fee: ${position.protocolFeeLabel}</p>`
+                  ? `<p class="position-meta">Fee: ${escapeHtml(position.protocolFeeLabel)}</p>`
                   : ""
               }
-              ${(position.claimable || position.claimed) ? `<p class="position-meta">Expected payout: ${position.payoutLabel}</p>` : ""}
-              <p class="position-meta">State: ${position.marketStatusLabel}</p>
-              <p class="position-meta">Created: ${position.createdAt ? new Date(position.createdAt * 1000).toLocaleString() : "n/a"}</p>
-              <p class="position-meta">Closed: ${position.closeAt ? new Date(position.closeAt * 1000).toLocaleString() : "n/a"}</p>
+              ${(position.claimable || position.claimed) ? `<p class="position-meta">Expected payout: ${escapeHtml(position.payoutLabel)}</p>` : ""}
+              <p class="position-meta">State: ${escapeHtml(position.marketStatusLabel)}</p>
+              <p class="position-meta">Created: ${escapeHtml(position.createdAt ? new Date(position.createdAt * 1000).toLocaleString() : "n/a")}</p>
+              <p class="position-meta">Closed: ${escapeHtml(position.closeAt ? new Date(position.closeAt * 1000).toLocaleString() : "n/a")}</p>
             </div>
           </div>
-          <span class="claim-pill ${getClaimClass(position.positionStatus)}">${position.positionStatusLabel}</span>
+          <span class="claim-pill ${getClaimClass(position.positionStatus)}">${escapeHtml(position.positionStatusLabel)}</span>
           <button
             class="primary-button compact-button ${state.pendingClaim?.positionId === position.id ? "is-busy" : ""}"
             data-action="claim"
@@ -1565,7 +1579,7 @@ function renderPositions(items) {
           </button>
           ${
             state.positionNotices[position.id]
-              ? `<p class="position-note inline-notice inline-notice--${state.positionNotices[position.id].type}">${state.positionNotices[position.id].message}</p>`
+              ? `<p class="position-note inline-notice inline-notice--${state.positionNotices[position.id].type}">${escapeHtml(state.positionNotices[position.id].message)}</p>`
               : ""
           }
         </article>
