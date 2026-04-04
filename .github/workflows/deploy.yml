@@ -32,6 +32,7 @@ jobs:
           script: |
             set -euo pipefail
             cd "$DEPLOY_PATH"
+            git config --global --add safe.directory "$DEPLOY_PATH" >/dev/null 2>&1 || true
             PREV_COMMIT="$(git rev-parse HEAD)"
             PREV_BACKUP_FILE=""
             PREV_BUILD_COMMIT="$PREV_COMMIT"
