@@ -36,7 +36,7 @@ const MARKET_VIEW_CACHE_TTL_MS = 8_000;
 const MARKET_READ_CONCURRENCY = 4;
 const POSITION_READ_CONCURRENCY = 2;
 const POSITION_RECENT_SCAN_LIMIT = 16;
-const POSITION_CACHE_TTL_MS = 15_000;
+const POSITION_CACHE_TTL_MS = 45_000;
 const CHAIN_CONFIRM_TIMEOUT_SEC = 120;
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
@@ -296,6 +296,26 @@ function getCachedPositions(cacheKey, { allowStale = false } = {}) {
   return entry.items;
 }
 
+function mergePositionItems(previousItems = [], nextItems = []) {
+  const merged = new Map();
+
+  for (const item of previousItems) {
+    if (item?.id) {
+      merged.set(item.id, item);
+    }
+  }
+
+  for (const item of nextItems) {
+    if (item?.id) {
+      merged.set(item.id, item);
+    }
+  }
+
+  return [...merged.values()].sort(
+    (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
+  );
+}
+
 function normalizeUserAddress(userAddress) {
   return parseAddress(userAddress).toString();
 }
@@ -488,11 +508,13 @@ export async function listPositions(userAddress, options = {}) {
 
   const inflight = buildPositions(normalizedUser, { full })
     .then((items) => {
+      const previousItems = getCachedPositions(cacheKey, { allowStale: true }) ?? [];
+      const mergedItems = mergePositionItems(previousItems, items);
       positionsCache.set(cacheKey, {
-        items,
+        items: mergedItems,
         expiresAtMs: Date.now() + POSITION_CACHE_TTL_MS,
       });
-      return items;
+      return mergedItems;
     })
     .catch((error) => {
       const stale = getCachedPositions(cacheKey, { allowStale: true });
