@@ -109,10 +109,20 @@ jobs:
               export BUILD_TIME="$build_time"
             }
 
+            cleanup_worktree() {
+              git clean -fd \
+                -e .env \
+                -e .env.local \
+                -e apps/api/data/runtime/ \
+                -e apps/api/data/runtime/** \
+                >/dev/null 2>&1 || true
+            }
+
             rollback() {
               trap - ERR
               set +e
               echo "[deploy] rollback to ${PREV_COMMIT}"
+              cleanup_worktree
               git reset --hard "$PREV_COMMIT"
               export_build_env "$PREV_BUILD_REF" "$PREV_BUILD_COMMIT" "$PREV_BUILD_TIME"
               cleanup_compose_state
@@ -138,6 +148,7 @@ jobs:
             TARGET_COMMIT="$(git rev-parse "${TARGET_GIT_REF}^{commit}")"
             TARGET_BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
             PREV_BUILD_TIME="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+            cleanup_worktree
             git reset --hard "$TARGET_COMMIT"
             export_build_env "$TARGET_REF" "$TARGET_COMMIT" "$TARGET_BUILD_TIME"
             if [ -f docker-compose.yml ]; then
