@@ -133,6 +133,8 @@ const state = {
 };
 
 let panelTransitionInFlight = false;
+let marketsRequestSeq = 0;
+let createContextRequestSeq = 0;
 
 if (runtimeModeEl) {
   runtimeModeEl.textContent = isTelegram ? "Inside Telegram" : "Browser Preview";
@@ -848,6 +850,7 @@ function renderMarkets(items) {
 }
 
 async function loadMarkets(status = "") {
+  const requestSeq = ++marketsRequestSeq;
   state.marketsLoading = true;
   marketFeedbackEl.textContent = "Loading markets...";
   if (!state.markets.length) {
@@ -857,10 +860,16 @@ async function loadMarkets(status = "") {
   try {
     const query = status ? `?status=${encodeURIComponent(status)}` : "";
     const payload = await requestJson(`/api/markets${query}`);
+    if (requestSeq !== marketsRequestSeq) {
+      return;
+    }
     state.markets = payload.items ?? [];
     state.marketsLoading = false;
     renderMarkets(state.markets);
   } catch (error) {
+    if (requestSeq !== marketsRequestSeq) {
+      return;
+    }
     state.marketsLoading = false;
     state.markets = [];
     marketGridEl.innerHTML = "";
@@ -1021,12 +1030,17 @@ async function primePositions() {
 }
 
 async function loadCreateContext() {
+  const requestSeq = ++createContextRequestSeq;
+  const asset = assetEl.value;
+  const durationSec = durationEl.value;
+
   try {
-    const asset = assetEl.value;
-    const durationSec = durationEl.value;
     const payload = await requestJson(
       `/api/create-context?asset=${encodeURIComponent(asset)}&durationSec=${encodeURIComponent(durationSec)}`,
     );
+    if (requestSeq !== createContextRequestSeq) {
+      return;
+    }
 
     state.createContext = {
       asset,
@@ -1040,9 +1054,12 @@ async function loadCreateContext() {
     };
     state.createContextLoaded = true;
   } catch (error) {
+    if (requestSeq !== createContextRequestSeq) {
+      return;
+    }
     state.createContext = {
-      asset: assetEl.value,
-      durationSec: Number(durationEl.value),
+      asset,
+      durationSec: Number(durationSec),
       currentPrice: null,
       currentPriceLabel: "",
       thresholdLabel: "",

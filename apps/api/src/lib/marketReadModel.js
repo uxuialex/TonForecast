@@ -44,6 +44,8 @@ const POSITION_READ_CONCURRENCY = 2;
 const POSITION_RECENT_SCAN_LIMIT = 16;
 const POSITION_CACHE_TTL_MS = 45_000;
 const CHAIN_CONFIRM_TIMEOUT_SEC = 120;
+const POSITION_SCOPE_RECENT = "recent";
+const POSITION_SCOPE_FULL = "full";
 const marketViewCache = new Map();
 const marketViewInflight = new Map();
 const positionsCache = new Map();
@@ -242,6 +244,9 @@ async function buildMarketFromRecord(record, snapshotMap, nowSec) {
       contractAddress: record.contractAddress,
       ownerAddress: record.ownerAddress,
       resolverAddress: record.resolverAddress,
+      contractVersion: record.contractVersion ?? null,
+      contractCodeHash: record.contractCodeHash ?? null,
+      contractCodeHashBase64: record.contractCodeHashBase64 ?? null,
       onchainReady,
       iconUrl,
     },
@@ -302,6 +307,14 @@ function getCachedPositions(cacheKey, { allowStale = false } = {}) {
   return entry.items;
 }
 
+function getPositionsCacheKey(normalizedUser, scope = POSITION_SCOPE_RECENT) {
+  return `${normalizedUser}:${scope}`;
+}
+
+function getScopedCachedPositions(normalizedUser, scope, options = {}) {
+  return getCachedPositions(getPositionsCacheKey(normalizedUser, scope), options);
+}
+
 function mergePositionItems(previousItems = [], nextItems = []) {
   const merged = new Map();
 
@@ -320,6 +333,39 @@ function mergePositionItems(previousItems = [], nextItems = []) {
   return [...merged.values()].sort(
     (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
   );
+}
+
+function getMergedCachedPositions(normalizedUser, { allowStale = false } = {}) {
+  return mergePositionItems(
+    getScopedCachedPositions(normalizedUser, POSITION_SCOPE_FULL, { allowStale }) ?? [],
+    getScopedCachedPositions(normalizedUser, POSITION_SCOPE_RECENT, { allowStale }) ?? [],
+  );
+}
+
+function getPreferredCachedPositions(normalizedUser, { full = false, allowStale = false } = {}) {
+  const preferredScope = full ? POSITION_SCOPE_FULL : POSITION_SCOPE_RECENT;
+  const fallbackScope = full ? POSITION_SCOPE_RECENT : POSITION_SCOPE_FULL;
+
+  return (
+    getScopedCachedPositions(normalizedUser, preferredScope, { allowStale }) ??
+    getScopedCachedPositions(normalizedUser, fallbackScope, { allowStale })
+  );
+}
+
+function writePositionsCaches(normalizedUser, items, { includeFull = false } = {}) {
+  const expiresAtMs = Date.now() + POSITION_CACHE_TTL_MS;
+
+  positionsCache.set(getPositionsCacheKey(normalizedUser, POSITION_SCOPE_RECENT), {
+    items,
+    expiresAtMs,
+  });
+
+  if (includeFull) {
+    positionsCache.set(getPositionsCacheKey(normalizedUser, POSITION_SCOPE_FULL), {
+      items,
+      expiresAtMs,
+    });
+  }
 }
 
 function normalizeUserAddress(userAddress) {
@@ -489,31 +535,45 @@ export async function listPositions(userAddress, options = {}) {
   const normalizedUser = normalizeUserAddress(userAddress);
   const fresh = options.fresh === true;
   const full = options.full === true;
-  const cacheKey = normalizedUser;
+  const inflightKey = getPositionsCacheKey(
+    normalizedUser,
+    full ? POSITION_SCOPE_FULL : POSITION_SCOPE_RECENT,
+  );
+  const recentInflightKey = getPositionsCacheKey(normalizedUser, POSITION_SCOPE_RECENT);
+  const fullInflightKey = getPositionsCacheKey(normalizedUser, POSITION_SCOPE_FULL);
 
   if (!fresh) {
-    const cached = getCachedPositions(cacheKey);
+    const cached = getPreferredCachedPositions(normalizedUser, { full });
     if (cached) {
       return cached;
     }
   }
 
-  if (positionsInflight.has(cacheKey)) {
-    return positionsInflight.get(cacheKey);
+  if (full) {
+    if (positionsInflight.has(fullInflightKey)) {
+      return positionsInflight.get(fullInflightKey);
+    }
+  } else {
+    if (positionsInflight.has(recentInflightKey)) {
+      return positionsInflight.get(recentInflightKey);
+    }
+    if (positionsInflight.has(fullInflightKey)) {
+      return positionsInflight.get(fullInflightKey);
+    }
   }
 
   const inflight = buildPositions(normalizedUser, { full })
     .then((items) => {
-      const previousItems = getCachedPositions(cacheKey, { allowStale: true }) ?? [];
+      const previousItems = getMergedCachedPositions(normalizedUser, { allowStale: true });
       const mergedItems = mergePositionItems(previousItems, items);
-      positionsCache.set(cacheKey, {
-        items: mergedItems,
-        expiresAtMs: Date.now() + POSITION_CACHE_TTL_MS,
-      });
+      writePositionsCaches(normalizedUser, mergedItems, { includeFull: full });
       return mergedItems;
     })
     .catch((error) => {
-      const stale = getCachedPositions(cacheKey, { allowStale: true });
+      const stale = getPreferredCachedPositions(normalizedUser, {
+        full,
+        allowStale: true,
+      }) ?? getMergedCachedPositions(normalizedUser, { allowStale: true });
       if (stale) {
         console.warn(
           `[api] positions refresh failed for ${normalizedUser}, serving stale cache: ${error instanceof Error ? error.message : String(error)}`,
@@ -524,10 +584,10 @@ export async function listPositions(userAddress, options = {}) {
       throw error;
     })
     .finally(() => {
-      positionsInflight.delete(cacheKey);
+      positionsInflight.delete(inflightKey);
     });
 
-  positionsInflight.set(cacheKey, inflight);
+  positionsInflight.set(inflightKey, inflight);
   return inflight;
 }
 

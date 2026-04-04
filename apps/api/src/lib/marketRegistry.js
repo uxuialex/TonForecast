@@ -171,6 +171,7 @@ export function findBlockingCreate(asset, durationSec, nowSec = Math.floor(Date.
   const duration = Number(durationSec);
   const persisted = listMarketRecords().find(
     (item) =>
+      !item.createFailedAt &&
       item.asset === asset &&
       Number(item.durationSec) === duration &&
       Number(item.closeAt) > nowSec,

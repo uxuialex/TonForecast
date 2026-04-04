@@ -54,6 +54,10 @@ const buildArtifactPath = path.resolve(
 const buildArtifact = JSON.parse(fs.readFileSync(buildArtifactPath, "utf8"));
 const codeCell = Cell.fromBoc(Buffer.from(buildArtifact.hex, "hex"))[0];
 
+export const TON_FORECAST_MARKET_CONTRACT_VERSION = "v2-uncontested-draw";
+export const TON_FORECAST_MARKET_CODE_HASH = buildArtifact.hash;
+export const TON_FORECAST_MARKET_CODE_HASH_BASE64 = buildArtifact.hashBase64;
+
 function isZeroAddress(address) {
   return [...address.hash].every((byte) => byte === 0);
 }

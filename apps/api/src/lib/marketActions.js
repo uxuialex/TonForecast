@@ -36,6 +36,9 @@ import {
   STATUS_RESOLVED_DRAW,
   STATUS_RESOLVED_NO,
   STATUS_RESOLVED_YES,
+  TON_FORECAST_MARKET_CODE_HASH,
+  TON_FORECAST_MARKET_CODE_HASH_BASE64,
+  TON_FORECAST_MARKET_CONTRACT_VERSION,
   toPrice6,
 } from "./tonForecastMarket.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
@@ -191,6 +194,9 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec }) {
     contractAddress: intent.address.toString(),
     marketId: marketId.toString(),
     deploymentSalt: deploymentSalt.toString(),
+    contractVersion: TON_FORECAST_MARKET_CONTRACT_VERSION,
+    contractCodeHash: TON_FORECAST_MARKET_CODE_HASH,
+    contractCodeHashBase64: TON_FORECAST_MARKET_CODE_HASH_BASE64,
     asset,
     direction: "above",
     currentPriceAtCreate: context.currentPrice,
