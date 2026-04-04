@@ -99,6 +99,23 @@ async function testResolvePolicyConsensus() {
   assert.equal(insufficient.ok, false);
 }
 
+async function testSourceMonitorSummary() {
+  const sourceMonitor = await importFresh("apps/api/src/lib/sourceMonitor.js");
+
+  const okSnapshot = sourceMonitor.summarizeSourceMonitor("TON", [
+    { source: "ston.fi", finalPrice: 1_240_000n },
+    { source: "coinmarketcap", finalPrice: 1_241_000n },
+  ]);
+  assert.equal(okSnapshot.ok, true);
+
+  const warnSnapshot = sourceMonitor.summarizeSourceMonitor("TON", [
+    { source: "ston.fi", finalPrice: 1_200_000n },
+    { source: "coinmarketcap", finalPrice: 1_260_000n },
+  ]);
+  assert.equal(warnSnapshot.ok, false);
+  assert.equal(warnSnapshot.status, "warn");
+}
+
 async function testRuntimeStoreMigrationAndBackup() {
   await withTempRuntimeDir(async (tempDir) => {
     fs.writeFileSync(
@@ -253,6 +270,7 @@ async function testServerAdminRoutes() {
 
 await testRuntimeEnvFailover();
 await testResolvePolicyConsensus();
+await testSourceMonitorSummary();
 await testRuntimeStoreMigrationAndBackup();
 await testServerAdminRoutes();
 

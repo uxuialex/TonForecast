@@ -102,6 +102,7 @@ const userMarketsFeedbackEl = document.querySelector("#user-markets-feedback");
 const userMarketsSyncMetaEl = document.querySelector("#user-markets-sync-meta");
 const userMarketsListEl = document.querySelector("#user-markets-list");
 const adminFeedbackEl = document.querySelector("#admin-feedback");
+const adminSourceMonitorEl = document.querySelector("#admin-source-monitor");
 const adminListEl = document.querySelector("#admin-list");
 const adminAuditListEl = document.querySelector("#admin-audit-list");
 const adminAccessButtonEl = document.querySelector("#admin-access-button");
@@ -160,6 +161,7 @@ const state = {
   adminEligible: false,
   adminMarkets: [],
   adminAuditEntries: [],
+  adminSourceMonitor: null,
   adminLoading: false,
   userMarketsLoading: false,
   createContext: {
@@ -849,9 +851,11 @@ async function loadAdminEligibility(userAddress) {
     state.adminToken = "";
     state.adminMarkets = [];
     state.adminAuditEntries = [];
+    state.adminSourceMonitor = null;
     persistAdminToken("");
     renderAdminMarkets([]);
     renderAdminAuditLog([]);
+    renderAdminSourceMonitor(null);
   } else if (state.adminToken) {
     loadAdminMarkets().catch((error) => {
       console.warn("loadAdminMarkets failed", error);
@@ -874,6 +878,7 @@ function syncWalletState(wallet) {
     state.adminToken = "";
     state.adminMarkets = [];
     state.adminAuditEntries = [];
+    state.adminSourceMonitor = null;
     persistAdminToken("");
     setWalletSummary(
       "Wallet not connected",
@@ -891,6 +896,7 @@ function syncWalletState(wallet) {
     syncAdminControls();
     renderAdminMarkets([]);
     renderAdminAuditLog([]);
+    renderAdminSourceMonitor(null);
     renderMarkets(state.markets);
     renderPositions(state.positions);
     setCreateNotice("Connect a wallet to unlock create, bet, and claim actions.", "info");
@@ -1064,6 +1070,36 @@ function renderAdminMarkets(items) {
   syncAdminControls();
 }
 
+function renderAdminSourceMonitor(snapshot) {
+  if (!adminSourceMonitorEl) {
+    return;
+  }
+
+  if (!state.adminToken || !snapshot) {
+    adminSourceMonitorEl.innerHTML = "";
+    return;
+  }
+
+  const quotes = Array.isArray(snapshot.quotes) ? snapshot.quotes : [];
+  const summary = quotes
+    .map((quote) => `${escapeHtml(quote.source)} ${escapeHtml(quote.priceLabel)}`)
+    .join(" • ");
+  const statusClass = snapshot.ok ? "is-ok" : "is-warn";
+
+  adminSourceMonitorEl.innerHTML = `
+    <div class="admin-source-monitor__card ${statusClass}">
+      <div class="admin-source-monitor__title">TON source monitor</div>
+      <div class="admin-source-monitor__meta">
+        <span>Status: ${escapeHtml(snapshot.ok ? "within spread" : "watch")}</span>
+        <span>Spread: ${escapeHtml(String(snapshot.spreadBps))}bps</span>
+        <span>Sources: ${escapeHtml(String(snapshot.sourceCount))}/${escapeHtml(String(snapshot.minimumSourceCount))}</span>
+      </div>
+      ${summary ? `<div class="admin-source-monitor__meta">${summary}</div>` : ""}
+      ${snapshot.reason ? `<div class="admin-source-monitor__reason">${escapeHtml(snapshot.reason)}</div>` : ""}
+    </div>
+  `;
+}
+
 function renderAdminAuditLog(items) {
   if (!adminAuditListEl) {
     return;
@@ -1112,12 +1148,27 @@ async function loadAdminAuditLog() {
   renderAdminAuditLog(state.adminAuditEntries);
 }
 
+async function loadAdminSourceMonitor() {
+  if (!state.adminToken) {
+    state.adminSourceMonitor = null;
+    renderAdminSourceMonitor(null);
+    return null;
+  }
+
+  const payload = await requestAdminJson("/api/admin/source-monitor?asset=TON");
+  state.adminSourceMonitor = payload ?? null;
+  renderAdminSourceMonitor(state.adminSourceMonitor);
+  return state.adminSourceMonitor;
+}
+
 async function loadAdminMarkets() {
   if (!state.adminToken) {
     state.adminMarkets = [];
     renderAdminMarkets(state.adminMarkets);
     state.adminAuditEntries = [];
     renderAdminAuditLog([]);
+    state.adminSourceMonitor = null;
+    renderAdminSourceMonitor(null);
     return;
   }
 
@@ -1127,6 +1178,7 @@ async function loadAdminMarkets() {
     const [marketsPayload] = await Promise.all([
       requestAdminJson("/api/admin/markets"),
       loadAdminAuditLog(),
+      loadAdminSourceMonitor(),
     ]);
     state.adminMarkets = (marketsPayload.items ?? []).filter(
       (item) => item.isProblemMarket || item.adminHiddenAt || item.adminLegacyFlagAt,
@@ -1210,8 +1262,10 @@ async function handleAdminAccess() {
     state.adminToken = "";
     state.adminMarkets = [];
     state.adminAuditEntries = [];
+    state.adminSourceMonitor = null;
     renderAdminMarkets(state.adminMarkets);
     renderAdminAuditLog(state.adminAuditEntries);
+    renderAdminSourceMonitor(state.adminSourceMonitor);
     syncAdminControls();
     return;
   }

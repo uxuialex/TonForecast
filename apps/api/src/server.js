@@ -25,6 +25,7 @@ import {
   getAdminToken,
   getTonRpcPoolSnapshot,
 } from "./lib/runtimeEnv.js";
+import { getSourceMonitorSnapshot } from "./lib/sourceMonitor.js";
 import { getAssetSnapshots } from "./lib/stonApi.js";
 import {
   getMarketById,
@@ -230,8 +231,15 @@ export async function handleRequest(request) {
           runtimeStore: getRuntimeStoreStats(),
           tonRpcPool: getTonRpcPoolSnapshot(),
           autoResolver: getAutoResolverStatus(),
+          sourceMonitor: await getSourceMonitorSnapshot("TON"),
         }),
       );
+    }
+
+    if (url.pathname === "/api/admin/source-monitor") {
+      requireAdmin(request);
+      const asset = url.searchParams.get("asset") ?? "TON";
+      return json(await getSourceMonitorSnapshot(asset));
     }
 
     if (url.pathname === "/api/admin/runtime/backup" && request.method === "POST") {
