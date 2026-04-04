@@ -4,6 +4,7 @@ import {
   BLOCKED_PREFIX,
   runAutoResolveJob,
 } from "./marketAutoResolver.js";
+import { incrementMetric, setGauge } from "./runtimeMetrics.js";
 
 const scheduledResolvers = new Map();
 const runningResolvers = new Set();
@@ -16,9 +17,17 @@ const AUTO_RESOLVE_SWEEP_INTERVAL_MS = 60_000;
 const MAX_PARALLEL_AUTO_RESOLVERS = 1;
 let sweepTimer = null;
 
+function syncResolverMetrics() {
+  setGauge("auto_resolver_scheduled", scheduledResolvers.size);
+  setGauge("auto_resolver_running", runningResolvers.size);
+  setGauge("auto_resolver_queued", queuedResolvers.length);
+  setGauge("auto_resolver_retrying", resolverRetryCounts.size);
+}
+
 function getRetryDelayMs(marketAddress) {
   const nextAttempt = (resolverRetryCounts.get(marketAddress) ?? 0) + 1;
   resolverRetryCounts.set(marketAddress, nextAttempt);
+  syncResolverMetrics();
   return Math.min(MAX_RETRY_DELAY_MS, 5_000 * nextAttempt);
 }
 
@@ -30,6 +39,7 @@ function clearScheduledResolver(marketAddress) {
 
   clearTimeout(scheduled.timer);
   scheduledResolvers.delete(marketAddress);
+  syncResolverMetrics();
 }
 
 function enqueueResolver(marketAddress) {
@@ -38,6 +48,7 @@ function enqueueResolver(marketAddress) {
   }
 
   queuedResolvers.push(marketAddress);
+  syncResolverMetrics();
   void pumpResolverQueue();
 }
 
@@ -49,11 +60,13 @@ async function pumpResolverQueue() {
     }
 
     runningResolvers.add(marketAddress);
+    syncResolverMetrics();
     const prefix = `[auto-resolver:${marketAddress}]`;
 
     void runAutoResolveJob(marketAddress)
       .then((result) => {
         if (result.status === "blocked") {
+          incrementMetric("auto_resolver_result_total", 1, { status: "blocked" });
           resolverRetryCounts.delete(marketAddress);
           saveMarketRecord({
             contractAddress: marketAddress,
@@ -69,6 +82,7 @@ async function pumpResolverQueue() {
         }
 
         if (result.status === "retry") {
+          incrementMetric("auto_resolver_result_total", 1, { status: "retry" });
           const retryDelayMs = Number(result.delayMs ?? getRetryDelayMs(marketAddress));
           console.warn(`${prefix} retrying in ${retryDelayMs}ms: ${result.reason || "retry requested"}`);
           scheduleAutoResolve(marketAddress, retryDelayMs);
@@ -76,9 +90,11 @@ async function pumpResolverQueue() {
         }
 
         resolverRetryCounts.delete(marketAddress);
+        incrementMetric("auto_resolver_result_total", 1, { status: result.status });
         console.log(`${prefix} ${result.reason || "completed"}`);
       })
       .catch((error) => {
+        incrementMetric("auto_resolver_result_total", 1, { status: "error" });
         const retryDelayMs = getRetryDelayMs(marketAddress);
         const message = error instanceof Error ? error.message : String(error);
         console.warn(`${prefix} retrying in ${retryDelayMs}ms after failed run: ${message}`);
@@ -86,6 +102,7 @@ async function pumpResolverQueue() {
       })
       .finally(() => {
         runningResolvers.delete(marketAddress);
+        syncResolverMetrics();
         void pumpResolverQueue();
       });
   }
@@ -106,6 +123,7 @@ export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
 
   const timer = setTimeout(() => {
     scheduledResolvers.delete(marketAddress);
+    syncResolverMetrics();
     enqueueResolver(marketAddress);
   }, Math.max(1_000, delayMs));
 
@@ -114,6 +132,7 @@ export function scheduleAutoResolve(marketAddress, delayMs = INITIAL_DELAY_MS) {
     timer,
     dueAtMs: nextDueAt,
   });
+  syncResolverMetrics();
 }
 
 function isResolvedRecord(record) {
@@ -166,6 +185,8 @@ export function runAutoResolverSweep() {
     scheduleAutoResolveForRecord(record, nowSec);
   }
 
+  incrementMetric("auto_resolver_sweep_total", 1);
+  setGauge("auto_resolver_sweep_candidates", candidates.length);
   return candidates.length;
 }
 
@@ -187,6 +208,33 @@ export function bootstrapAutoResolvers() {
   }, AUTO_RESOLVE_SWEEP_INTERVAL_MS);
 
   sweepTimer.unref?.();
+  syncResolverMetrics();
 }
 
 export { AUTO_RESOLVE_BLOCKED_EXIT_CODE };
+
+export function retryAutoResolve(contractAddress, delayMs = 1_000) {
+  const normalizedAddress = String(contractAddress ?? "").trim();
+  if (!normalizedAddress) {
+    return false;
+  }
+
+  resolverRetryCounts.delete(normalizedAddress);
+  clearScheduledResolver(normalizedAddress);
+  scheduleAutoResolve(normalizedAddress, delayMs);
+  incrementMetric("auto_resolver_manual_retry_total", 1);
+  return true;
+}
+
+export function getAutoResolverStatus() {
+  return {
+    scheduled: scheduledResolvers.size,
+    running: runningResolvers.size,
+    queued: queuedResolvers.length,
+    retrying: resolverRetryCounts.size,
+    sweepActive: Boolean(sweepTimer),
+    scheduledMarkets: [...scheduledResolvers.keys()],
+    queuedMarkets: [...queuedResolvers],
+    runningMarkets: [...runningResolvers],
+  };
+}

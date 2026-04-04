@@ -1,8 +1,14 @@
 import { mnemonicToWalletKey } from "@ton/crypto";
 import { Address, beginCell, Cell, SendMode, toNano } from "@ton/core";
 import { WalletContractV4, WalletContractV5R1, internal } from "@ton/ton";
-import { ensureRuntimeEnvLoaded, getResolverWalletVersion, getTonClient } from "./runtimeEnv.js";
+import {
+  ensureRuntimeEnvLoaded,
+  getPreferredTonClient,
+  getResolverWalletVersion,
+  withTonClientFailover,
+} from "./runtimeEnv.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
+import { incrementMetric } from "./runtimeMetrics.js";
 import {
   DIRECTION_ABOVE,
   DIRECTION_BELOW,
@@ -24,7 +30,7 @@ const DEFAULT_MAX_RETRIES = 6;
 const AUTO_RESOLVE_BLOCKED_EXIT_CODE = 42;
 const BLOCKED_PREFIX = "[resolver-blocked]";
 
-let resolverRuntimePromise = null;
+let resolverWalletMaterialPromise = null;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -68,9 +74,9 @@ async function withRateLimitRetry(label, task) {
   throw new Error(`[resolver] ${label} exceeded retry budget`);
 }
 
-async function getResolverRuntime() {
-  if (!resolverRuntimePromise) {
-    resolverRuntimePromise = (async () => {
+async function getResolverWalletMaterial() {
+  if (!resolverWalletMaterialPromise) {
+    resolverWalletMaterialPromise = (async () => {
       const mnemonic = getRequiredEnv("RESOLVER_MNEMONIC")
         .split(/\s+/)
         .filter(Boolean);
@@ -86,17 +92,26 @@ async function getResolverRuntime() {
             publicKey: keyPair.publicKey,
           });
 
-      const client = getTonClient();
       return {
-        client,
         keyPair,
         walletVersion,
-        wallet: client.open(walletContract),
+        walletContract,
       };
     })();
   }
 
-  return resolverRuntimePromise;
+  return resolverWalletMaterialPromise;
+}
+
+async function getResolverRuntime() {
+  const material = await getResolverWalletMaterial();
+  const preferredProvider = getPreferredTonClient();
+  return {
+    ...material,
+    client: preferredProvider.client,
+    providerId: preferredProvider.id,
+    wallet: preferredProvider.client.open(material.walletContract),
+  };
 }
 
 async function waitForSeqnoIncrement(wallet, currentSeqno) {
@@ -168,7 +183,7 @@ export async function runAutoResolveJob(marketAddress) {
 
   const normalizedAddress = parseAddress(marketAddress).toString();
   const contract = openMarketContract(normalizedAddress);
-  const { client, keyPair, wallet } = await getResolverRuntime();
+  const { keyPair, wallet, providerId } = await getResolverRuntime();
 
   const state = await withRateLimitRetry("get_market_state", () => contract.getMarketState());
   const nowSec = Math.floor(Date.now() / 1000);
@@ -185,8 +200,11 @@ export async function runAutoResolveJob(marketAddress) {
     };
   }
 
-  const onchainCodeHash = await getOnchainContractCodeHash(client, Address.parse(normalizedAddress));
+  const onchainCodeHash = await withTonClientFailover("get_contract_state", (client) =>
+    getOnchainContractCodeHash(client, Address.parse(normalizedAddress)),
+  );
   if (isLegacyUncontestedMarket(onchainCodeHash, state)) {
+    incrementMetric("auto_resolver_blocked_total", 1, { reason: "legacy_uncontested" });
     return {
       status: "blocked",
       code: AUTO_RESOLVE_BLOCKED_EXIT_CODE,
@@ -232,6 +250,7 @@ export async function runAutoResolveJob(marketAddress) {
 
   const nextState = await withRateLimitRetry("get_market_state", () => contract.getMarketState());
   if (nextState.status === STATUS_OPEN || nextState.status === STATUS_LOCKED) {
+    incrementMetric("auto_resolver_retry_total", 1, { provider: providerId });
     return {
       status: "retry",
       delayMs: 15_000,

@@ -183,9 +183,12 @@
 
           <div class="positions-section">
             <div class="positions-toolbar">
-              <h3 class="positions-heading">My Markets</h3>
+              <div>
+                <h3 class="positions-heading">My Markets</h3>
+                <p id="user-markets-sync-meta" class="sync-meta">Connect a wallet to start syncing tracked markets.</p>
+              </div>
             </div>
-            <p id="user-markets-feedback" class="section-feedback">Tracked markets will appear here after positions load.</p>
+            <p id="user-markets-feedback" class="section-feedback">Tracked markets will appear here after your wallet is connected.</p>
             <div id="user-markets-list" class="positions-list user-markets-list"></div>
           </div>
 
@@ -199,12 +202,19 @@
                 <button id="admin-access-button" type="button" class="ghost-button positions-refresh-button">
                   Admin Access
                 </button>
+                <button id="admin-backup-button" type="button" class="ghost-button positions-refresh-button" disabled>
+                  Backup
+                </button>
                 <button id="admin-refresh-button" type="button" class="ghost-button positions-refresh-button" disabled>
                   Reload
                 </button>
               </div>
             </div>
             <div id="admin-list" class="positions-list admin-list"></div>
+            <div class="positions-toolbar admin-audit-toolbar">
+              <h3 class="positions-heading">Admin Audit</h3>
+            </div>
+            <div id="admin-audit-list" class="positions-list admin-audit-list"></div>
           </div>
         </section>
       </main>

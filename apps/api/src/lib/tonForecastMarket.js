@@ -10,7 +10,7 @@ import {
   storeStateInit,
   toNano,
 } from "@ton/core";
-import { getTonClient } from "./runtimeEnv.js";
+import { getPreferredTonClient, withTonClientFailover } from "./runtimeEnv.js";
 
 const OP_CREATE_MARKET = 0x6357b5ef;
 const OP_BET_YES = 0x26489d83;
@@ -425,26 +425,50 @@ class TonForecastMarketContract {
 
 export function openMarketContract(address) {
   const normalized = parseAddress(address).toString();
-  const existing = openedContracts.get(normalized);
+  const preferredProvider = getPreferredTonClient();
+  const providerKey = preferredProvider?.id ?? "default";
+  const cacheKey = `${providerKey}:${normalized}`;
+  const existing = openedContracts.get(cacheKey);
   if (existing) {
     return existing;
   }
 
-  const client = getTonClient();
+  const client = preferredProvider.client;
   const opened = client.open(new TonForecastMarketContract(normalized));
-  openedContracts.set(normalized, opened);
+  openedContracts.set(cacheKey, opened);
   return opened;
+}
+
+function openMarketContractForProvider(address, provider) {
+  const normalized = parseAddress(address).toString();
+  const providerKey = provider?.id ?? "default";
+  const cacheKey = `${providerKey}:${normalized}`;
+  const existing = openedContracts.get(cacheKey);
+  if (existing) {
+    return existing;
+  }
+
+  const opened = provider.client.open(new TonForecastMarketContract(normalized));
+  openedContracts.set(cacheKey, opened);
+  return opened;
+}
+
+async function callMarketWithFailover(address, label, task) {
+  const normalized = parseAddress(address).toString();
+  return withTonClientFailover(label, async (_client, provider) => {
+    const contract = openMarketContractForProvider(normalized, provider);
+    return task(contract, provider);
+  });
 }
 
 export async function getCachedMarketState(address) {
   const normalized = parseAddress(address).toString();
-  const contract = openMarketContract(normalized);
   return getCachedAsync(
     marketStateCache,
     marketStateInflight,
     normalized,
     MARKET_STATE_CACHE_TTL_MS,
-    () => contract.getMarketState(),
+    () => callMarketWithFailover(normalized, "get_market_state", (contract) => contract.getMarketState()),
   );
 }
 
@@ -452,14 +476,16 @@ export async function getCachedUserStake(address, userAddress) {
   const normalizedAddress = parseAddress(address).toString();
   const normalizedUser = parseAddress(userAddress).toString();
   const cacheKey = `${normalizedAddress}:${normalizedUser}`;
-  const contract = openMarketContract(normalizedAddress);
 
   return getCachedAsync(
     userStakeCache,
     userStakeInflight,
     cacheKey,
     USER_STAKE_CACHE_TTL_MS,
-    () => contract.getUserStake(normalizedUser),
+    () =>
+      callMarketWithFailover(normalizedAddress, "get_user_stake", (contract) =>
+        contract.getUserStake(normalizedUser),
+      ),
   );
 }
 
@@ -467,6 +493,12 @@ export function invalidateContractCaches(address) {
   const normalized = parseAddress(address).toString();
   marketStateCache.delete(normalized);
   marketStateInflight.delete(normalized);
+
+  for (const key of openedContracts.keys()) {
+    if (key.endsWith(`:${normalized}`)) {
+      openedContracts.delete(key);
+    }
+  }
 
   for (const key of userStakeCache.keys()) {
     if (key.startsWith(`${normalized}:`)) {

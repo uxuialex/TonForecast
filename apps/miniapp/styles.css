@@ -1179,6 +1179,10 @@ select:focus {
   gap: 8px;
 }
 
+.admin-audit-toolbar {
+  margin-top: 14px;
+}
+
 .positions-refresh-button {
   min-width: 92px;
   padding: 8px 14px;
@@ -1334,7 +1338,8 @@ select:focus {
 }
 
 .user-market-row,
-.admin-market-row {
+.admin-market-row,
+.admin-audit-row {
   display: grid;
   gap: 10px;
 }

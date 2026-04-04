@@ -5,17 +5,19 @@ import { DatabaseSync } from "node:sqlite";
 const runtimeDir = path.resolve(process.cwd(), "apps/api/data/runtime");
 const legacyRuntimeFile = path.join(runtimeDir, "markets.json");
 const runtimeDbFile = path.join(runtimeDir, "markets.db");
+const runtimeBackupDir = path.join(runtimeDir, "backups");
 const pendingCreates = new Map();
 const PENDING_TTL_MS = 2 * 60 * 1000;
 
 let db = null;
 
 function createEmptyStore() {
-  return { version: 4, markets: [], userMarketIndex: {}, userPositionSnapshots: {} };
+  return { version: 5, markets: [], userMarketIndex: {}, userPositionSnapshots: {} };
 }
 
 function ensureRuntimeDir() {
   fs.mkdirSync(runtimeDir, { recursive: true });
+  fs.mkdirSync(runtimeBackupDir, { recursive: true });
 }
 
 function readLegacyStore() {
@@ -89,6 +91,18 @@ function getDb() {
       synced_at INTEGER NOT NULL DEFAULT 0,
       items_json TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS admin_audit_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      created_at INTEGER NOT NULL,
+      actor TEXT NOT NULL,
+      action TEXT NOT NULL,
+      contract_address TEXT,
+      details_json TEXT NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created_at
+      ON admin_audit_log(created_at DESC, id DESC);
   `);
 
   migrateLegacyStore(db);
@@ -230,6 +244,49 @@ function cleanupPendingCreates() {
       pendingCreates.delete(key);
     }
   }
+}
+
+function getAllUserMarketIndex() {
+  const grouped = {};
+  const rows = getDb().prepare(`
+    SELECT user_address, contract_address
+    FROM user_market_index
+    ORDER BY user_address ASC, contract_address ASC
+  `).all();
+
+  for (const row of rows) {
+    if (!grouped[row.user_address]) {
+      grouped[row.user_address] = [];
+    }
+    grouped[row.user_address].push(row.contract_address);
+  }
+
+  return grouped;
+}
+
+function getAllUserPositionSnapshots() {
+  const grouped = {};
+  const rows = getDb().prepare(`
+    SELECT user_address, synced_at, items_json
+    FROM user_position_snapshots
+    ORDER BY user_address ASC
+  `).all();
+
+  for (const row of rows) {
+    let items = [];
+    try {
+      items = JSON.parse(row.items_json ?? "[]");
+    } catch {
+      items = [];
+    }
+
+    grouped[row.user_address] = {
+      syncedAt: Number(row.synced_at ?? 0),
+      items: Array.isArray(items) ? items : [],
+    };
+  }
+
+  return grouped;
 }
 
 export function listMarketRecords() {
@@ -427,6 +484,110 @@ export function saveUserPositionSnapshot(userAddress, items) {
   return {
     items: normalizedItems,
     syncedAt,
+  };
+}
+
+export function appendAdminAuditEntry({ actor = "admin", action, contractAddress = null, details = {} }) {
+  const normalizedAction = String(action ?? "").trim();
+  if (!normalizedAction) {
+    return null;
+  }
+
+  const createdAt = Math.floor(Date.now() / 1000);
+  const payload = JSON.stringify(details ?? {});
+  const result = withTransaction((tx) =>
+    tx.prepare(`
+      INSERT INTO admin_audit_log (created_at, actor, action, contract_address, details_json)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(createdAt, String(actor || "admin"), normalizedAction, contractAddress, payload),
+  );
+
+  return {
+    id: Number(result.lastInsertRowid ?? 0),
+    createdAt,
+    actor: String(actor || "admin"),
+    action: normalizedAction,
+    contractAddress,
+    details,
+  };
+}
+
+export function listAdminAuditEntries(limit = 100) {
+  const normalizedLimit = Math.max(1, Math.min(500, Number(limit) || 100));
+  const rows = getDb().prepare(`
+    SELECT id, created_at, actor, action, contract_address, details_json
+    FROM admin_audit_log
+    ORDER BY created_at DESC, id DESC
+    LIMIT ?
+  `).all(normalizedLimit);
+
+  return rows.map((row) => {
+    let details = {};
+    try {
+      details = JSON.parse(row.details_json ?? "{}");
+    } catch {
+      details = {};
+    }
+
+    return {
+      id: Number(row.id ?? 0),
+      createdAt: Number(row.created_at ?? 0),
+      actor: row.actor,
+      action: row.action,
+      contractAddress: row.contract_address ?? null,
+      details,
+    };
+  });
+}
+
+export function getRuntimeStoreStats() {
+  const database = getDb();
+  return {
+    dbFile: runtimeDbFile,
+    dbFileSizeBytes: fs.existsSync(runtimeDbFile) ? fs.statSync(runtimeDbFile).size : 0,
+    marketCount: Number(database.prepare("SELECT COUNT(*) AS count FROM markets").get().count ?? 0),
+    userMarketIndexCount: Number(
+      database.prepare("SELECT COUNT(*) AS count FROM user_market_index").get().count ?? 0,
+    ),
+    userSnapshotCount: Number(
+      database.prepare("SELECT COUNT(*) AS count FROM user_position_snapshots").get().count ?? 0,
+    ),
+    auditEntryCount: Number(
+      database.prepare("SELECT COUNT(*) AS count FROM admin_audit_log").get().count ?? 0,
+    ),
+  };
+}
+
+export function exportRuntimeBackup(reason = "manual") {
+  ensureRuntimeDir();
+  const safeReason = String(reason ?? "manual")
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9-_]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "manual";
+  const createdAt = new Date();
+  const fileName = `runtime-${createdAt.toISOString().replaceAll(":", "-")}-${safeReason}.json`;
+  const filePath = path.join(runtimeBackupDir, fileName);
+  const payload = {
+    version: createEmptyStore().version,
+    exportedAt: createdAt.toISOString(),
+    reason: safeReason,
+    storeStats: getRuntimeStoreStats(),
+    markets: listMarketRecords(),
+    userMarketIndex: getAllUserMarketIndex(),
+    userPositionSnapshots: getAllUserPositionSnapshots(),
+    adminAuditLog: listAdminAuditEntries(500),
+  };
+
+  fs.writeFileSync(filePath, JSON.stringify(payload, null, 2));
+
+  return {
+    filePath,
+    fileName,
+    exportedAt: payload.exportedAt,
+    reason: safeReason,
+    marketCount: payload.markets.length,
+    userCount: Object.keys(payload.userMarketIndex).length,
   };
 }
 

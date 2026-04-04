@@ -85,10 +85,13 @@ const positionsSyncMetaEl = document.querySelector("#positions-sync-meta");
 const positionsListEl = document.querySelector("#positions-list");
 const positionsRefreshButtonEl = document.querySelector("#positions-refresh-button");
 const userMarketsFeedbackEl = document.querySelector("#user-markets-feedback");
+const userMarketsSyncMetaEl = document.querySelector("#user-markets-sync-meta");
 const userMarketsListEl = document.querySelector("#user-markets-list");
 const adminFeedbackEl = document.querySelector("#admin-feedback");
 const adminListEl = document.querySelector("#admin-list");
+const adminAuditListEl = document.querySelector("#admin-audit-list");
 const adminAccessButtonEl = document.querySelector("#admin-access-button");
+const adminBackupButtonEl = document.querySelector("#admin-backup-button");
 const adminRefreshButtonEl = document.querySelector("#admin-refresh-button");
 const marketFilterEl = document.querySelector("#market-filter");
 const marketFilterTriggerEl = document.querySelector("#market-filter-trigger");
@@ -140,7 +143,9 @@ const state = {
   prices: [],
   adminToken: readAdminToken(),
   adminMarkets: [],
+  adminAuditEntries: [],
   adminLoading: false,
+  userMarketsLoading: false,
   createContext: {
     asset: assetEl.value,
     durationSec: Number(durationEl.value),
@@ -168,6 +173,7 @@ let panelTransitionInFlight = false;
 let marketsRequestSeq = 0;
 let createContextRequestSeq = 0;
 let positionsRequestSeq = 0;
+let userMarketsRequestSeq = 0;
 
 if (runtimeModeEl) {
   runtimeModeEl.textContent = isTelegram ? "Inside Telegram" : "Browser Preview";
@@ -238,8 +244,14 @@ function switchPanel(nextPanelName) {
     loadCreateContext();
   }
 
-  if (nextPanelName === "profile" && state.wallet && !state.positionsLoaded) {
-    primePositions();
+  if (nextPanelName === "profile" && state.wallet) {
+    if (!state.positionsLoaded) {
+      primePositions();
+    } else {
+      loadUserMarkets().catch((error) => {
+        console.warn("loadUserMarkets failed", error);
+      });
+    }
   }
 }
 
@@ -290,6 +302,11 @@ function buildPositionsQuery(userAddress, options = {}) {
     params.set("full", "1");
   }
   return `/api/positions?${params.toString()}`;
+}
+
+function buildUserMarketsQuery(userAddress) {
+  const params = new URLSearchParams({ userAddress });
+  return `/api/my-markets?${params.toString()}`;
 }
 
 function buildSinglePositionQuery(userAddress, contractAddress, options = {}) {
@@ -589,6 +606,14 @@ function setPositionsSyncMeta(message) {
   positionsSyncMetaEl.textContent = message;
 }
 
+function setUserMarketsSyncMeta(message) {
+  if (!userMarketsSyncMetaEl) {
+    return;
+  }
+
+  userMarketsSyncMetaEl.textContent = message;
+}
+
 function buildMarketFlagsHtml(market) {
   const flags = [];
   if (market.isLegacyMarket) {
@@ -603,53 +628,31 @@ function buildMarketFlagsHtml(market) {
   return flags.join("");
 }
 
-function buildUserMarketsFromPositions(items) {
-  const byAddress = new Map();
-
-  for (const position of items) {
-    if (!position?.contractAddress) {
-      continue;
-    }
-
-    const existing = byAddress.get(position.contractAddress);
-    if (!existing) {
-      byAddress.set(position.contractAddress, {
-        ...position,
-        positionCount: 1,
-        claimableCount: position.claimable ? 1 : 0,
-      });
-      continue;
-    }
-
-    existing.positionCount += 1;
-    if (position.claimable) {
-      existing.claimableCount += 1;
-    }
-  }
-
-  return [...byAddress.values()].sort(
-    (left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0),
-  );
-}
-
 function renderUserMarkets(items) {
   state.userMarkets = items;
 
   if (!state.wallet) {
     userMarketsFeedbackEl.textContent = "Connect a wallet to see your markets.";
+    setUserMarketsSyncMeta("Connect a wallet to start syncing tracked markets.");
     userMarketsListEl.innerHTML =
       '<div class="position-empty">Wallet disconnected. Market activity is idle.</div>';
     return;
   }
 
   if (!items.length) {
-    userMarketsFeedbackEl.textContent = "No tracked markets yet.";
+    userMarketsFeedbackEl.textContent = state.userMarketsLoading
+      ? "Loading tracked markets..."
+      : "No tracked markets yet.";
+    setUserMarketsSyncMeta(
+      state.userMarketsLoading ? "Scanning tracked markets..." : "Tracked markets are up to date.",
+    );
     userMarketsListEl.innerHTML =
-      '<div class="position-empty">Markets tied to your positions will appear here.</div>';
+      '<div class="position-empty">Markets tied to your wallet activity will appear here.</div>';
     return;
   }
 
   userMarketsFeedbackEl.textContent = `${items.length} tracked market${items.length === 1 ? "" : "s"}`;
+  setUserMarketsSyncMeta(state.userMarketsLoading ? "Refreshing tracked markets..." : "Tracked markets synced.");
   userMarketsListEl.innerHTML = items
     .map((market) => `
       <article class="position-row user-market-row" data-market-id="${market.marketId}">
@@ -679,6 +682,46 @@ function renderUserMarkets(items) {
       </article>
     `)
     .join("");
+}
+
+async function loadUserMarkets(options = {}) {
+  const requestSeq = ++userMarketsRequestSeq;
+  if (!state.wallet) {
+    state.userMarketsLoading = false;
+    renderUserMarkets([]);
+    return [];
+  }
+
+  state.userMarketsLoading = true;
+  renderUserMarkets(state.userMarkets);
+  setUserMarketsSyncMeta("Refreshing tracked markets...");
+
+  try {
+    const payload = await requestJson(buildUserMarketsQuery(state.wallet.account.address));
+    if (requestSeq !== userMarketsRequestSeq) {
+      return payload.items ?? [];
+    }
+
+    state.userMarketsLoading = false;
+    state.userMarkets = payload.items ?? [];
+    renderUserMarkets(state.userMarkets);
+    return state.userMarkets;
+  } catch (error) {
+    if (requestSeq !== userMarketsRequestSeq) {
+      return state.userMarkets;
+    }
+
+    state.userMarketsLoading = false;
+    if (!state.userMarkets.length) {
+      setUserMarketsSyncMeta("Failed to sync tracked markets.");
+      userMarketsFeedbackEl.textContent = `Failed to load tracked markets: ${error.message}`;
+      userMarketsListEl.innerHTML = "";
+    } else {
+      setUserMarketsSyncMeta("Showing last known tracked markets.");
+      renderUserMarkets(state.userMarkets);
+    }
+    throw error;
+  }
 }
 
 function getMarketActionHint(market, effectiveStatus) {
@@ -719,8 +762,10 @@ function syncWalletState(wallet) {
     positionsFeedbackEl.textContent = "Connect a wallet to load positions.";
     positionsFeedbackEl.classList.remove("is-loading");
     setPositionsSyncMeta("Connect a wallet to start syncing.");
+    setUserMarketsSyncMeta("Connect a wallet to start syncing tracked markets.");
     positionsListEl.innerHTML =
       '<div class="position-empty">Wallet disconnected. Position feed is idle.</div>';
+    state.userMarkets = [];
     renderUserMarkets([]);
     syncPositionsRefreshButton();
     syncAdminControls();
@@ -734,12 +779,17 @@ function syncWalletState(wallet) {
   walletStatusEl.textContent = "Wallet connected";
   walletAddressEl.textContent = `${shortAddress(wallet.account.address)} • Create, bet and claim with this wallet.`;
   setPositionsSyncMeta("Wallet connected. Profile snapshot will sync when opened.");
+  setUserMarketsSyncMeta("Wallet connected. Tracked markets will sync when opened.");
   clearActionFeedback();
   if (state.createNotice?.message?.startsWith("Connect a wallet")) {
     setCreateNotice(null);
   }
   if (getActivePanelName() === "profile") {
     primePositions();
+  } else if (state.wallet && !state.userMarkets.length) {
+    loadUserMarkets().catch((error) => {
+      console.warn("loadUserMarkets failed", error);
+    });
   }
   if (getActivePanelName() === "create") {
     loadCreateContext();
@@ -770,6 +820,7 @@ async function requestAdminJson(url, options = {}) {
 
   const headers = new Headers(options.headers ?? {});
   headers.set("x-admin-token", state.adminToken);
+  headers.set("x-admin-actor", state.wallet?.account?.address ? `wallet:${state.wallet.account.address}` : "miniapp-admin");
   return requestJson(url, {
     ...options,
     headers,
@@ -794,6 +845,12 @@ function syncAdminControls() {
     adminRefreshButtonEl.disabled = !hasToken || state.adminLoading;
     adminRefreshButtonEl.classList.toggle("is-busy", state.adminLoading);
     adminRefreshButtonEl.textContent = state.adminLoading ? "Loading..." : "Reload";
+  }
+
+  if (adminBackupButtonEl) {
+    adminBackupButtonEl.disabled = !hasToken || state.adminLoading;
+    adminBackupButtonEl.classList.toggle("is-busy", state.adminLoading);
+    adminBackupButtonEl.textContent = state.adminLoading ? "Working..." : "Backup";
   }
 }
 
@@ -848,6 +905,12 @@ function renderAdminMarkets(items) {
           <button class="ghost-button" type="button" data-admin-action="hide" data-enabled="${market.adminHiddenAt ? "1" : "0"}">
             ${market.adminHiddenAt ? "Unhide" : "Hide"}
           </button>
+          <button class="ghost-button" type="button" data-admin-action="block-auto-resolve" data-enabled="${market.autoResolveBlockedAt ? "1" : "0"}">
+            ${market.autoResolveBlockedAt ? "Unblock Resolver" : "Block Resolver"}
+          </button>
+          <button class="ghost-button" type="button" data-admin-action="retry-resolve">
+            Retry Resolve
+          </button>
         </div>
       </article>
     `)
@@ -856,18 +919,71 @@ function renderAdminMarkets(items) {
   syncAdminControls();
 }
 
+function renderAdminAuditLog(items) {
+  if (!adminAuditListEl) {
+    return;
+  }
+
+  if (!state.adminToken) {
+    adminAuditListEl.innerHTML = "";
+    return;
+  }
+
+  if (!items.length) {
+    adminAuditListEl.innerHTML =
+      '<div class="position-empty">No admin audit entries yet.</div>';
+    return;
+  }
+
+  adminAuditListEl.innerHTML = items
+    .map((entry) => `
+      <article class="position-row admin-audit-row">
+        <div>
+          <div class="position-header">
+            <p class="position-title">${entry.action}</p>
+            <span class="position-meta">${formatMarketDateTime(entry.createdAt)}</span>
+          </div>
+          <div class="admin-market-summary">
+            <span>Actor: ${entry.actor}</span>
+            ${entry.contractAddress ? `<span>Market: ${shortAddress(entry.contractAddress)}</span>` : ""}
+            ${entry.details?.reason ? `<span>Reason: ${entry.details.reason}</span>` : ""}
+            ${entry.details?.fileName ? `<span>Backup: ${entry.details.fileName}</span>` : ""}
+          </div>
+        </div>
+      </article>
+    `)
+    .join("");
+}
+
+async function loadAdminAuditLog() {
+  if (!state.adminToken) {
+    state.adminAuditEntries = [];
+    renderAdminAuditLog([]);
+    return;
+  }
+
+  const payload = await requestAdminJson("/api/admin/audit-log?limit=12");
+  state.adminAuditEntries = payload.items ?? [];
+  renderAdminAuditLog(state.adminAuditEntries);
+}
+
 async function loadAdminMarkets() {
   if (!state.adminToken) {
     state.adminMarkets = [];
     renderAdminMarkets(state.adminMarkets);
+    state.adminAuditEntries = [];
+    renderAdminAuditLog([]);
     return;
   }
 
   state.adminLoading = true;
   syncAdminControls();
   try {
-    const payload = await requestAdminJson("/api/admin/markets");
-    state.adminMarkets = (payload.items ?? []).filter(
+    const [marketsPayload] = await Promise.all([
+      requestAdminJson("/api/admin/markets"),
+      loadAdminAuditLog(),
+    ]);
+    state.adminMarkets = (marketsPayload.items ?? []).filter(
       (item) => item.isProblemMarket || item.adminHiddenAt || item.adminLegacyFlagAt,
     );
     renderAdminMarkets(state.adminMarkets);
@@ -894,10 +1010,48 @@ async function updateAdminMarketFlag(contractAddress, patch) {
   await Promise.all([
     loadMarkets(state.activeMarketStatus),
     state.wallet ? loadPositions({ fresh: true, full: true, silent: true }) : Promise.resolve(),
+    state.wallet ? loadUserMarkets() : Promise.resolve(),
     loadAdminMarkets(),
   ]);
 
   return payload;
+}
+
+async function runAdminMarketAction(contractAddress, action, body = {}) {
+  const payload = await requestAdminJson(
+    `/api/admin/markets/${encodeURIComponent(contractAddress)}/${action}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  );
+
+  await Promise.all([
+    loadMarkets(state.activeMarketStatus),
+    state.wallet ? loadPositions({ fresh: true, full: true, silent: true }) : Promise.resolve(),
+    state.wallet ? loadUserMarkets() : Promise.resolve(),
+    loadAdminMarkets(),
+  ]);
+
+  return payload;
+}
+
+async function handleAdminBackup() {
+  const reason = window.prompt("Backup reason (optional)") ?? "admin";
+  state.adminLoading = true;
+  syncAdminControls();
+  try {
+    await requestAdminJson("/api/admin/runtime/backup", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ reason }),
+    });
+    await loadAdminMarkets();
+  } finally {
+    state.adminLoading = false;
+    syncAdminControls();
+  }
 }
 
 async function handleAdminAccess() {
@@ -905,7 +1059,9 @@ async function handleAdminAccess() {
     persistAdminToken("");
     state.adminToken = "";
     state.adminMarkets = [];
+    state.adminAuditEntries = [];
     renderAdminMarkets(state.adminMarkets);
+    renderAdminAuditLog(state.adminAuditEntries);
     syncAdminControls();
     return;
   }
@@ -1204,7 +1360,6 @@ async function loadMarkets(status = "") {
 
 function renderPositions(items) {
   if (!state.wallet) {
-    renderUserMarkets([]);
     return;
   }
 
@@ -1216,7 +1371,6 @@ function renderPositions(items) {
   if (!items.length) {
     positionsListEl.innerHTML =
       '<div class="position-empty">No positions yet. Create a market or place a bet to start the demo flow.</div>';
-    renderUserMarkets([]);
     return;
   }
 
@@ -1278,7 +1432,6 @@ function renderPositions(items) {
     )
     .join("");
 
-  renderUserMarkets(buildUserMarketsFromPositions(items));
 }
 
 function syncPositionsRefreshButton() {
@@ -1383,13 +1536,27 @@ async function primePositions() {
   }
 
   if (Array.isArray(seeded) && seeded.length > 0) {
-    loadPositions({ fresh: true, full: true, silent: true }).catch((error) => {
-      console.warn("background full positions refresh failed", error);
+    Promise.allSettled([
+      loadPositions({ fresh: true, full: true, silent: true }),
+      loadUserMarkets(),
+    ]).then((results) => {
+      for (const result of results) {
+        if (result.status === "rejected") {
+          console.warn("background profile refresh failed", result.reason);
+        }
+      }
     });
     return;
   }
 
-  await loadPositions({ fresh: true, full: true });
+  const results = await Promise.allSettled([
+    loadPositions({ fresh: true, full: true }),
+    loadUserMarkets(),
+  ]);
+  const positionsResult = results[0];
+  if (positionsResult?.status === "rejected") {
+    throw positionsResult.reason;
+  }
 }
 
 async function loadCreateContext() {
@@ -1557,6 +1724,7 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
         await Promise.all([
           loadMarkets(state.activeMarketStatus),
           loadPositions({ fresh: true, full: true, silent: true }),
+          loadUserMarkets(),
         ]);
         setMarketNotice(contractAddress, "Bet confirmed onchain.", "success");
         return;
@@ -1572,6 +1740,7 @@ async function waitForBetIndexed(contractAddress, userAddress, previousAmountTon
   await Promise.all([
     loadMarkets(state.activeMarketStatus),
     loadPositions({ fresh: true, full: true, silent: true }),
+    loadUserMarkets(),
   ]);
   setMarketNotice(contractAddress, "Bet sent. Position refresh may lag briefly while blockchain state propagates.", "warn");
 }
@@ -1653,6 +1822,7 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
         await Promise.all([
           loadMarkets(state.activeMarketStatus),
           loadPositions({ fresh: true, full: true, silent: true }),
+          loadUserMarkets(),
         ]);
         setPositionNotice(positionId, "Claim confirmed onchain.", "success");
         return;
@@ -1668,6 +1838,7 @@ async function waitForClaimIndexed(positionId, userAddress, timeoutMs = 45_000) 
   await Promise.all([
     loadMarkets(state.activeMarketStatus),
     loadPositions({ fresh: true, full: true, silent: true }),
+    loadUserMarkets(),
   ]);
   setPositionNotice(positionId, "Claim sent. Wallet balance and position state may update with a short onchain delay.", "warn");
 }
@@ -1999,7 +2170,10 @@ positionsRefreshButtonEl?.addEventListener("click", () => {
   if (!state.wallet) {
     return;
   }
-  loadPositions({ fresh: true, full: true });
+  Promise.allSettled([
+    loadPositions({ fresh: true, full: true }),
+    loadUserMarkets(),
+  ]);
 });
 
 adminAccessButtonEl?.addEventListener("click", () => {
@@ -2009,6 +2183,12 @@ adminAccessButtonEl?.addEventListener("click", () => {
 adminRefreshButtonEl?.addEventListener("click", () => {
   loadAdminMarkets().catch((error) => {
     console.warn("loadAdminMarkets failed", error);
+  });
+});
+
+adminBackupButtonEl?.addEventListener("click", () => {
+  handleAdminBackup().catch((error) => {
+    window.alert(normalizeActionError(error.message));
   });
 });
 
@@ -2037,6 +2217,20 @@ adminListEl?.addEventListener("click", (event) => {
   } else if (action === "hide") {
     const hiddenReason = enabled ? "" : window.prompt("Hide reason (optional)") ?? "";
     patch = { hidden: !enabled, hiddenReason };
+  } else if (action === "block-auto-resolve") {
+    const reason = enabled ? "" : window.prompt("Block reason (optional)") ?? "";
+    runAdminMarketAction(contractAddress, "auto-resolve-block", {
+      blocked: !enabled,
+      reason,
+    }).catch((error) => {
+      window.alert(normalizeActionError(error.message));
+    });
+    return;
+  } else if (action === "retry-resolve") {
+    runAdminMarketAction(contractAddress, "retry-resolve").catch((error) => {
+      window.alert(normalizeActionError(error.message));
+    });
+    return;
   } else {
     return;
   }
@@ -2092,6 +2286,9 @@ setInterval(() => {
     !state.pendingClaim
   ) {
     loadPositions();
+    loadUserMarkets().catch((error) => {
+      console.warn("profile user markets refresh failed", error);
+    });
   }
 }, 30000);
 
@@ -2100,7 +2297,9 @@ loadMarkets(state.activeMarketStatus);
 clearActionFeedback();
 syncPositionsRefreshButton();
 syncAdminControls();
+renderUserMarkets(state.userMarkets);
 renderAdminMarkets(state.adminMarkets);
+renderAdminAuditLog(state.adminAuditEntries);
 if (state.adminToken) {
   loadAdminMarkets().catch((error) => {
     console.warn("initial admin load failed", error);

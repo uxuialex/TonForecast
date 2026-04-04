@@ -6,8 +6,10 @@
     "bp": "blueprint",
     "build:contracts": "blueprint build",
     "test:contracts": "jest --runInBand --verbose",
+    "test:runtime": "node scripts/runtimeIntegrationChecks.mjs",
     "deploy:contract": "blueprint run",
-    "resolver:auto": "ts-node scripts/autoResolveTonForecastMarket.ts"
+    "resolver:auto": "ts-node scripts/autoResolveTonForecastMarket.ts",
+    "backup:runtime": "node scripts/exportRuntimeBackup.mjs"
   },
   "dependencies": {
     "@ton/core": "~0"

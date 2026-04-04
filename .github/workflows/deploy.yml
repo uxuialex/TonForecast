@@ -44,6 +44,7 @@ jobs:
               docker compose up -d --build --force-recreate --no-deps api
               docker compose up -d --force-recreate --no-deps miniapp
               curl -fsS http://127.0.0.1:3010 >/dev/null
+              curl -fsS http://127.0.0.1:3010/api/runtime/health >/dev/null
               curl -fsS http://127.0.0.1:3010/api/prices >/dev/null
               curl -fsS "http://127.0.0.1:3010/api/markets?status=OPEN" >/dev/null
             fi

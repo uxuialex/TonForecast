@@ -1,6 +1,16 @@
 import { readAssetIcon } from "./lib/assets.js";
-import { saveMarketRecord } from "./lib/marketRegistry.js";
-import { bootstrapAutoResolvers } from "./lib/resolverAutomation.js";
+import {
+  appendAdminAuditEntry,
+  exportRuntimeBackup,
+  getRuntimeStoreStats,
+  listAdminAuditEntries,
+  saveMarketRecord,
+} from "./lib/marketRegistry.js";
+import {
+  bootstrapAutoResolvers,
+  getAutoResolverStatus,
+  retryAutoResolve,
+} from "./lib/resolverAutomation.js";
 import {
   confirmCreate,
   createBetIntent,
@@ -8,7 +18,7 @@ import {
   createMarketIntent,
   getCreateContext,
 } from "./lib/marketActions.js";
-import { ensureRuntimeEnvLoaded, getAdminToken } from "./lib/runtimeEnv.js";
+import { ensureRuntimeEnvLoaded, getAdminToken, getTonRpcPoolSnapshot } from "./lib/runtimeEnv.js";
 import { getAssetSnapshots } from "./lib/stonApi.js";
 import {
   getMarketById,
@@ -17,7 +27,9 @@ import {
   listAdminMarkets,
   listMarkets,
   listPositions,
+  listUserMarkets,
 } from "./lib/marketReadModel.js";
+import { getRuntimeMetricsSnapshot } from "./lib/runtimeMetrics.js";
 import { parseAddress } from "./lib/tonForecastMarket.js";
 
 function json(body, init = {}) {
@@ -52,6 +64,20 @@ function requireAdmin(request) {
   }
 }
 
+function getAdminActor(request) {
+  return request.headers.get("x-admin-actor")?.trim() || "miniapp-admin";
+}
+
+function buildRuntimeHealthPayload() {
+  return {
+    ok: true,
+    service: "api",
+    runtimeStore: getRuntimeStoreStats(),
+    tonRpcPool: getTonRpcPoolSnapshot(),
+    autoResolver: getAutoResolverStatus(),
+  };
+}
+
 async function readJson(request) {
   try {
     return await request.json();
@@ -68,7 +94,11 @@ export async function handleRequest(request) {
 
   try {
     if (url.pathname === "/healthz") {
-      return json({ ok: true, service: "api" });
+      return json(buildRuntimeHealthPayload());
+    }
+
+    if (url.pathname === "/api/runtime/health") {
+      return json(buildRuntimeHealthPayload());
     }
 
     if (url.pathname.startsWith("/api/assets/icons/")) {
@@ -105,6 +135,15 @@ export async function handleRequest(request) {
       return json(market);
     }
 
+    if (url.pathname === "/api/my-markets") {
+      const userAddress = url.searchParams.get("userAddress");
+      if (!userAddress) {
+        return json({ error: "userAddress is required" }, { status: 400 });
+      }
+
+      return json({ items: await listUserMarkets(userAddress) });
+    }
+
     if (url.pathname === "/api/admin/session") {
       requireAdmin(request);
       return json({ ok: true });
@@ -114,6 +153,81 @@ export async function handleRequest(request) {
       requireAdmin(request);
       const status = url.searchParams.get("status") ?? undefined;
       return json({ items: await listAdminMarkets(status) });
+    }
+
+    if (url.pathname === "/api/admin/audit-log") {
+      requireAdmin(request);
+      const limit = Number(url.searchParams.get("limit") ?? 100);
+      return json({ items: listAdminAuditEntries(limit) });
+    }
+
+    if (url.pathname === "/api/admin/metrics") {
+      requireAdmin(request);
+      return json(
+        getRuntimeMetricsSnapshot({
+          runtimeStore: getRuntimeStoreStats(),
+          tonRpcPool: getTonRpcPoolSnapshot(),
+          autoResolver: getAutoResolverStatus(),
+        }),
+      );
+    }
+
+    if (url.pathname === "/api/admin/runtime/backup" && request.method === "POST") {
+      requireAdmin(request);
+      const body = await readJson(request);
+      const backup = exportRuntimeBackup(body.reason ?? "admin");
+      appendAdminAuditEntry({
+        actor: getAdminActor(request),
+        action: "runtime.backup",
+        details: backup,
+      });
+      return json(backup);
+    }
+
+    if (url.pathname.endsWith("/retry-resolve") && request.method === "POST") {
+      requireAdmin(request);
+      const contractAddress = parseAddress(
+        decodeURIComponent(url.pathname.split("/").slice(-2)[0] ?? ""),
+      ).toString();
+      saveMarketRecord({
+        contractAddress,
+        autoResolveBlockedAt: null,
+        autoResolveBlockedReason: "",
+      });
+      invalidateMarketViewCache();
+      retryAutoResolve(contractAddress, 1_000);
+      appendAdminAuditEntry({
+        actor: getAdminActor(request),
+        action: "market.retry_resolve",
+        contractAddress,
+      });
+      return json({ ok: true, contractAddress });
+    }
+
+    if (url.pathname.endsWith("/auto-resolve-block") && request.method === "POST") {
+      requireAdmin(request);
+      const contractAddress = parseAddress(
+        decodeURIComponent(url.pathname.split("/").slice(-2)[0] ?? ""),
+      ).toString();
+      const body = await readJson(request);
+      const nowSec = Math.floor(Date.now() / 1000);
+      const nextRecord = saveMarketRecord({
+        contractAddress,
+        autoResolveBlockedAt: body.blocked === false ? null : nowSec,
+        autoResolveBlockedReason:
+          body.blocked === false ? "" : String(body.reason ?? "").trim(),
+      });
+      invalidateMarketViewCache();
+      appendAdminAuditEntry({
+        actor: getAdminActor(request),
+        action: body.blocked === false ? "market.unblock_auto_resolve" : "market.block_auto_resolve",
+        contractAddress,
+        details: {
+          blocked: body.blocked !== false,
+          reason: body.blocked === false ? "" : String(body.reason ?? "").trim(),
+        },
+      });
+      return json(nextRecord);
     }
 
     if (url.pathname.startsWith("/api/admin/markets/") && request.method === "POST") {
@@ -133,6 +247,17 @@ export async function handleRequest(request) {
           body.legacy === true ? String(body.legacyReason ?? "").trim() : "",
       });
       invalidateMarketViewCache();
+      appendAdminAuditEntry({
+        actor: getAdminActor(request),
+        action: "market.flags",
+        contractAddress,
+        details: {
+          hidden: body.hidden === true,
+          hiddenReason: body.hidden === true ? String(body.hiddenReason ?? "").trim() : "",
+          legacy: body.legacy === true,
+          legacyReason: body.legacy === true ? String(body.legacyReason ?? "").trim() : "",
+        },
+      });
       return json(nextRecord);
     }
 

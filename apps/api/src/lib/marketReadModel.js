@@ -17,6 +17,7 @@ import {
   saveMarketRecord,
   saveUserPositionSnapshot,
 } from "./marketRegistry.js";
+import { incrementMetric } from "./runtimeMetrics.js";
 import { getAssetSnapshotMap } from "./stonApi.js";
 import {
   DIRECTION_ABOVE,
@@ -610,6 +611,58 @@ export async function listAdminMarkets(status) {
   }));
 }
 
+export async function listUserMarkets(userAddress) {
+  const normalizedUser = normalizeUserAddress(userAddress);
+  const nowSec = Math.floor(Date.now() / 1000);
+  const snapshotMap = await getAssetSnapshotMap();
+  const indexedRecords = getIndexedMarketRecordsForUser(normalizedUser)
+    .filter((record) => !record.createFailedAt)
+    .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
+  const recordPatches = new Map();
+  const knownPositions = mergePositionItems(
+    getPersistedPositionItems(normalizedUser),
+    getMergedCachedPositions(normalizedUser, { allowStale: true }),
+  );
+  const positionSummaryByMarket = new Map();
+
+  for (const position of knownPositions) {
+    if (!position?.contractAddress) {
+      continue;
+    }
+
+    const current = positionSummaryByMarket.get(position.contractAddress) ?? {
+      positionCount: 0,
+      claimableCount: 0,
+    };
+    current.positionCount += 1;
+    if (position.claimable) {
+      current.claimableCount += 1;
+    }
+    positionSummaryByMarket.set(position.contractAddress, current);
+  }
+
+  const items = await mapConcurrent(
+    indexedRecords,
+    MARKET_READ_CONCURRENCY,
+    (record) => buildMarketFromRecord(record, snapshotMap, nowSec, { recordPatches }),
+  );
+  persistQueuedRecordPatches(recordPatches);
+
+  return items
+    .filter(Boolean)
+    .map((market) => {
+      const summary = positionSummaryByMarket.get(market.contractAddress) ?? {
+        positionCount: 0,
+        claimableCount: 0,
+      };
+      return {
+        ...market,
+        positionCount: summary.positionCount,
+        claimableCount: summary.claimableCount,
+      };
+    });
+}
+
 function getPositionCandidateRecords(userAddress, { full = false } = {}) {
   const records = listMarketRecords();
   const sortedRecords = [...records]
@@ -760,6 +813,7 @@ export async function listPositions(userAddress, options = {}) {
       getPreferredCachedPositions(normalizedUser, { full }) ?? [],
     );
     if (cached.length || cachedOnly) {
+      incrementMetric("positions_cache_hit_total", 1, { scope: full ? "full" : "recent" });
       return cached;
     }
   }
@@ -790,6 +844,9 @@ export async function listPositions(userAddress, options = {}) {
       const mergedItems = mergePositionItems(previousItems, items);
       writePositionsCaches(normalizedUser, mergedItems, { includeFull: full });
       saveUserPositionSnapshot(normalizedUser, normalizePersistedPositionItems(mergedItems));
+      incrementMetric("positions_refresh_success_total", 1, {
+        scope: full ? "full" : "recent",
+      });
       return mergedItems;
     })
     .catch((error) => {
@@ -802,9 +859,15 @@ export async function listPositions(userAddress, options = {}) {
         console.warn(
           `[api] positions refresh failed for ${normalizedUser}, serving stale cache: ${error instanceof Error ? error.message : String(error)}`,
         );
+        incrementMetric("positions_refresh_stale_total", 1, {
+          scope: full ? "full" : "recent",
+        });
         return fallback;
       }
 
+      incrementMetric("positions_refresh_failure_total", 1, {
+        scope: full ? "full" : "recent",
+      });
       throw error;
     })
     .finally(() => {
