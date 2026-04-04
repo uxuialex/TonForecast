@@ -27,6 +27,7 @@ jobs:
             set -euo pipefail
             cd "$DEPLOY_PATH"
             PREV_COMMIT="$(git rev-parse HEAD)"
+            PREV_BACKUP_FILE=""
 
             wait_for_http() {
               local url="$1"
@@ -44,16 +45,25 @@ jobs:
             }
 
             rollback() {
+              trap - ERR
+              set +e
               echo "[deploy] rollback to ${PREV_COMMIT}"
               git reset --hard "$PREV_COMMIT"
               docker compose down --remove-orphans 2>/dev/null || true
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
+              if [ -n "$PREV_BACKUP_FILE" ] && [ -f scripts/restoreRuntimeBackup.mjs ]; then
+                node scripts/restoreRuntimeBackup.mjs "$PREV_BACKUP_FILE" >/dev/null 2>&1 || true
+              fi
               docker compose up -d --build api miniapp
               wait_for_http http://127.0.0.1:3010 30 2 || true
             }
 
             trap rollback ERR
+            if [ -f scripts/exportRuntimeBackup.mjs ]; then
+              BACKUP_JSON="$(node scripts/exportRuntimeBackup.mjs deploy-preflight 2>/dev/null || true)"
+              PREV_BACKUP_FILE="$(printf '%s' "$BACKUP_JSON" | sed -n 's/.*"fileName": *"\([^"]*\)".*/\1/p' | head -n 1)"
+            fi
             git fetch origin main
             git reset --hard origin/main
             if [ -f docker-compose.yml ]; then
