@@ -36,17 +36,19 @@ Public domain
 The current [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) does this on each push to `main`:
 
 1. SSH to the VPS
-2. export a runtime backup before touching containers
+2. export a runtime backup from the running `api` container before touching containers
 3. `git fetch --tags origin main`
 4. `git reset --hard` to the exact triggering commit or the manually requested `target_ref`
 5. remove stale `ton-forecast-api` and `ton-forecast-miniapp` containers
 6. rebuild and recreate `api` and `miniapp`
 7. smoke-check `/`, `/api/runtime/health`, `/api/runtime/version`, `/api/prices`, and `/api/markets?status=OPEN`
-8. rollback to the previous commit and restore the runtime backup if those checks fail
+8. rollback to the previous commit and restore the runtime backup through the `api` container if those checks fail
 
 That split is intentional. Recreating `miniapp` after `api` avoids stale nginx upstream state inside Docker.
 
 When you run the workflow manually, you can optionally provide `target_ref` as a branch, tag, or commit SHA. That gives you a clean “deploy this exact version” path without logging into the VPS.
+
+The workflow no longer depends on `node` being installed on the VPS host. Runtime backup and restore execute through `docker compose exec api node ...`, so the only hard runtime dependency on the host remains Docker/Compose.
 
 ## GitHub Secrets
 

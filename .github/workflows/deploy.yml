@@ -53,16 +53,43 @@ jobs:
               return 1
             }
 
+            cleanup_compose_state() {
+              docker compose down --remove-orphans 2>/dev/null || true
+              docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
+              docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
+            }
+
+            api_exec() {
+              docker compose exec -T api "$@"
+            }
+
+            ensure_api_exec_container() {
+              if api_exec true >/dev/null 2>&1; then
+                return 0
+              fi
+
+              docker compose up -d --no-deps api >/dev/null 2>&1 || return 1
+
+              for _ in $(seq 1 20); do
+                if api_exec true >/dev/null 2>&1; then
+                  return 0
+                fi
+                sleep 1
+              done
+
+              return 1
+            }
+
             runtime_backup() {
               local reason="${1:-manual}"
-              docker run --rm -v "$DEPLOY_PATH:/app" -w /app node:22-alpine \
-                node scripts/exportRuntimeBackup.mjs "$reason"
+              ensure_api_exec_container || return 1
+              api_exec node scripts/exportRuntimeBackup.mjs "$reason"
             }
 
             runtime_restore() {
               local file_name="$1"
-              docker run --rm -v "$DEPLOY_PATH:/app" -w /app node:22-alpine \
-                node scripts/restoreRuntimeBackup.mjs "$file_name"
+              ensure_api_exec_container || return 1
+              api_exec node scripts/restoreRuntimeBackup.mjs "$file_name"
             }
 
             read_package_version() {
@@ -88,11 +115,10 @@ jobs:
               echo "[deploy] rollback to ${PREV_COMMIT}"
               git reset --hard "$PREV_COMMIT"
               export_build_env "$PREV_BUILD_REF" "$PREV_BUILD_COMMIT" "$PREV_BUILD_TIME"
-              docker compose down --remove-orphans 2>/dev/null || true
-              docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
-              docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
+              cleanup_compose_state
               if [ -n "$PREV_BACKUP_FILE" ] && [ -f scripts/restoreRuntimeBackup.mjs ]; then
                 runtime_restore "$PREV_BACKUP_FILE" >/dev/null 2>&1 || true
+                cleanup_compose_state
               fi
               docker compose up -d --build api miniapp
               wait_for_http http://127.0.0.1:3010 30 2 || true
@@ -115,9 +141,7 @@ jobs:
             git reset --hard "$TARGET_COMMIT"
             export_build_env "$TARGET_REF" "$TARGET_COMMIT" "$TARGET_BUILD_TIME"
             if [ -f docker-compose.yml ]; then
-              docker compose down --remove-orphans 2>/dev/null || true
-              docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
-              docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
+              cleanup_compose_state
               docker compose up -d --build api miniapp
               wait_for_http http://127.0.0.1:3010 30 2
               wait_for_http http://127.0.0.1:3010/api/runtime/health 30 2
