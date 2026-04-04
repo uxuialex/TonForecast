@@ -1164,6 +1164,14 @@ select:focus {
   font-family: "IBM Plex Mono", monospace;
 }
 
+.field-hint__label {
+  color: var(--dim);
+}
+
+.field-hint__value {
+  color: var(--accent);
+}
+
 .create-notice {
   margin-top: -4px;
 }

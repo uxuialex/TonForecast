@@ -126,9 +126,21 @@ export function getDirectionLabel(direction) {
   return direction === "above" ? "Above" : direction === "below" ? "Below" : "Unknown";
 }
 
-export function getMarketOutcomeLabel(outcome) {
-  if (outcome === "YES") return "Yes";
-  if (outcome === "NO") return "No";
+export function getDirectionalSideLabel(side, direction = "above") {
+  if (side === "YES") {
+    return direction === "below" ? "Down" : "Up";
+  }
+
+  if (side === "NO") {
+    return direction === "below" ? "Up" : "Down";
+  }
+
+  return "Unknown";
+}
+
+export function getMarketOutcomeLabel(outcome, direction = "above") {
+  if (outcome === "YES") return direction === "below" ? "Down" : "Up";
+  if (outcome === "NO") return direction === "below" ? "Up" : "Down";
   if (outcome === "DRAW") return "Refund";
   return "Pending";
 }
@@ -156,14 +168,14 @@ export function deriveMarketStatus(input, nowSec = Math.floor(Date.now() / 1000)
 export function getMarketStatusLabel(status) {
   if (status === "OPEN") return "Open";
   if (status === "LOCKED") return "Closed";
-  if (status === "RESOLVED_YES") return "Resolved: Yes";
-  if (status === "RESOLVED_NO") return "Resolved: No";
+  if (status === "RESOLVED_YES") return "Resolved: Up";
+  if (status === "RESOLVED_NO") return "Resolved: Down";
   if (status === "RESOLVED_DRAW") return "Resolved: Refund";
   return status;
 }
 
 export function buildMarketQuestion(input) {
-  return `Will ${input.token} be ${input.direction} $${formatAssetUsd(input.threshold, input.token)} in ${formatDurationLabel(input.durationSec)}?`;
+  return `${input.token} Up or Down in next ${formatDurationLabel(input.durationSec)}`;
 }
 
 export function determineOutcome(input) {
@@ -223,7 +235,7 @@ export function buildMarketView(market, nowSec = Math.floor(Date.now() / 1000)) 
     effectiveStatus,
     directionLabel: getDirectionLabel(market.direction),
     statusLabel: isPendingChain ? "Awaiting chain" : getMarketStatusLabel(effectiveStatus),
-    outcomeLabel: getMarketOutcomeLabel(market.outcome),
+    outcomeLabel: getMarketOutcomeLabel(market.outcome, market.direction),
     currentPriceLabel: `$${formatAssetUsd(market.currentPrice, market.token)}`,
     thresholdLabel: `$${formatAssetUsd(market.threshold, market.token)}`,
     finalPriceLabel: market.finalPrice == null ? "Pending" : `$${formatAssetUsd(market.finalPrice, market.token)}`,
@@ -320,16 +332,9 @@ export function buildPositionView(position, marketView) {
     marketStatusLabel: marketView.statusLabel,
     marketOutcome: marketView.outcome,
     marketOutcomeLabel: marketView.outcomeLabel,
-    betLabel: position.side === "YES" ? "Yes" : "No",
+    betLabel: getDirectionalSideLabel(position.side, marketView.direction),
     resultLabel: marketView.outcomeLabel,
-    sideLabel:
-      position.side === "YES"
-        ? marketView.direction === "above"
-          ? "Up"
-          : "Down"
-        : marketView.direction === "above"
-          ? "Down"
-          : "Up",
+    sideLabel: getDirectionalSideLabel(position.side, marketView.direction),
     amountLabel: `${formatTon(position.amountTon)} TON`,
     totalPoolTon,
     totalPoolLabel: `${formatTon(totalPoolTon)} TON`,

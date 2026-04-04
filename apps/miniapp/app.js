@@ -22,7 +22,6 @@ const TOKEN_META = {
 
 const ASSET_ICON_VERSION = "20260404b";
 const CREATE_ASSET_OPTIONS = ["TON", "STON", "tsTON", "UTYA", "MAJOR", "REDO"];
-const CREATE_DIRECTION_OPTIONS = ["above", "below"];
 
 const MARKET_FILTER_OPTIONS = [
   { value: "OPEN", label: "Active" },
@@ -83,8 +82,6 @@ const assetPickerMenuEl = document.querySelector("#asset-picker-menu");
 const assetPickerOptionEls = Array.from(
   document.querySelectorAll(".asset-picker__option"),
 );
-const directionEl = document.querySelector("#direction");
-const directionButtonEls = Array.from(document.querySelectorAll(".direction-toggle__button"));
 const durationEl = document.querySelector("#duration");
 const durationPickerEl = document.querySelector("#duration-picker");
 const durationPickerTriggerEl = document.querySelector("#duration-picker-trigger");
@@ -124,8 +121,6 @@ const marketFilterOptionEls = Array.from(
 const priceStripEl = document.querySelector("#price-strip");
 const createCurrentPriceEl = document.querySelector("#create-current-price");
 const createNoticeEl = document.querySelector("#create-notice");
-const thresholdPresetsEl = document.querySelector("#threshold-presets");
-const thresholdSelectedLabelEl = document.querySelector("#threshold-selected-label");
 const createMarketButtonEl = document.querySelector("#create-market-button");
 const actionFeedbackEl = document.querySelector("#action-feedback");
 const runtimeModeEl = document.querySelector("#runtime-mode");
@@ -175,13 +170,9 @@ const state = {
   userMarketsLoading: false,
   createContext: {
     asset: assetEl.value,
-    direction: directionEl?.value ?? "above",
     durationSec: Number(durationEl.value),
     currentPrice: null,
     currentPriceLabel: "",
-    threshold: null,
-    thresholdLabel: "",
-    thresholdPresets: [],
     question: "",
     canCreate: false,
     blockedReason: "",
@@ -365,13 +356,7 @@ function buildCreateContextQuery() {
   const params = new URLSearchParams({
     asset: assetEl.value,
     durationSec: durationEl.value,
-    direction: directionEl?.value ?? "above",
   });
-
-  const selectedThreshold = thresholdPresetsEl?.dataset.selectedThreshold;
-  if (selectedThreshold) {
-    params.set("threshold", selectedThreshold);
-  }
 
   return `/api/create-context?${params.toString()}`;
 }
@@ -853,11 +838,25 @@ function getMarketActionHint(market, effectiveStatus) {
   return "";
 }
 
-function getOutcomeLabel(outcome) {
-  if (outcome === "YES") return "Yes";
-  if (outcome === "NO") return "No";
+function getOutcomeLabel(outcome, direction = "above") {
+  if (outcome === "YES") return direction === "below" ? "Down" : "Up";
+  if (outcome === "NO") return direction === "below" ? "Up" : "Down";
   if (outcome === "DRAW") return "Refund";
   return "Pending";
+}
+
+function renderCreateCurrentPrice(message, currentPriceLabel = "", highlightValue = true) {
+  if (!createCurrentPriceEl) {
+    return;
+  }
+
+  if (!currentPriceLabel) {
+    createCurrentPriceEl.textContent = message;
+    return;
+  }
+
+  const valueClass = highlightValue ? "field-hint__value" : "field-hint__label";
+  createCurrentPriceEl.innerHTML = `${escapeHtml(message)} <span class="${valueClass}">${escapeHtml(currentPriceLabel)}</span>`;
 }
 
 async function loadAdminEligibility(userAddress) {
@@ -969,7 +968,12 @@ function syncWalletState(wallet) {
 }
 
 function buildBetButtonLabel(market, side) {
-  return side === "YES" ? "Yes" : "No";
+  const direction = market?.direction ?? "above";
+  if (side === "YES") {
+    return direction === "below" ? "Down" : "Up";
+  }
+
+  return direction === "below" ? "Up" : "Down";
 }
 
 async function requestJson(url, options = {}) {
@@ -1536,19 +1540,35 @@ function renderPositionSkeletons(count = 2) {
 function syncPreview() {
   const asset = assetEl.value;
   const duration = durationEl.value;
-  const direction = directionEl?.value ?? "above";
-  const currentPriceText = state.createContext.currentPriceLabel
-    ? `Current price: ${state.createContext.currentPriceLabel}`
-    : "Current price: loading...";
+  const currentPriceMessage = state.createContext.currentPriceLabel
+    ? "Current price:"
+    : "Current price:";
 
   previewQuestionEl.textContent =
     state.createContext.question ||
-    `Will ${asset} be ${direction} ${state.createContext.thresholdLabel || "live market threshold"} in ${formatDurationLabel(duration)}?`;
-  createCurrentPriceEl.textContent = state.createContext.blockedReason
-    ? `${currentPriceText} • ${state.createContext.thresholdLabel || "Threshold pending"} • ${state.createContext.blockedReason}`
-    : `${currentPriceText} • Threshold ${state.createContext.thresholdLabel || "loading..."} • Fixed on signature. Price source: CMC for TON, STON.fi for ecosystem tokens.`;
+    `${asset} Up or Down in next ${formatDurationLabel(duration)}`;
+  renderCreateCurrentPrice(
+    currentPriceMessage,
+    state.createContext.currentPriceLabel || "loading…",
+  );
 
-  renderInlineNotice(createNoticeEl, state.createNotice);
+  if (state.createNotice) {
+    renderInlineNotice(createNoticeEl, state.createNotice);
+    return;
+  }
+
+  if (state.createContext.blockedReason) {
+    renderInlineNotice(createNoticeEl, {
+      message: state.createContext.blockedReason,
+      type: "warn",
+    });
+    return;
+  }
+
+  renderInlineNotice(createNoticeEl, {
+    message: "Baseline price is locked when you sign. Price source: CMC for TON, STON.fi for ecosystem tokens.",
+    type: "muted",
+  });
 }
 
 function syncCreateButtonState() {
@@ -1597,7 +1617,7 @@ function buildMarketStatusMeta(market) {
 
   return {
     statusText: "Outcome",
-    statusValue: getOutcomeLabel(market.outcome),
+    statusValue: market.outcomeLabel || getOutcomeLabel(market.outcome, market.direction),
   };
 }
 
@@ -1941,7 +1961,6 @@ async function primePositions() {
 async function loadCreateContext() {
   const requestSeq = ++createContextRequestSeq;
   const asset = assetEl.value;
-  const direction = directionEl?.value ?? "above";
   const durationSec = durationEl.value;
 
   try {
@@ -1952,20 +1971,13 @@ async function loadCreateContext() {
 
     state.createContext = {
       asset,
-      direction,
       durationSec: Number(durationSec),
       currentPrice: payload.currentPrice ?? null,
       currentPriceLabel: payload.currentPriceLabel ?? "",
-      threshold: payload.threshold ?? null,
-      thresholdLabel: payload.thresholdLabel ?? "",
-      thresholdPresets: payload.thresholdPresets ?? [],
       question: payload.question ?? "",
       canCreate: Boolean(payload.canCreate),
       blockedReason: payload.blockedReason ?? "",
     };
-    if (thresholdPresetsEl) {
-      thresholdPresetsEl.dataset.selectedThreshold = payload.threshold != null ? String(payload.threshold) : "";
-    }
     state.createContextLoaded = true;
   } catch (error) {
     if (requestSeq !== createContextRequestSeq) {
@@ -1973,23 +1985,17 @@ async function loadCreateContext() {
     }
     state.createContext = {
       asset,
-      direction,
       durationSec: Number(durationSec),
       currentPrice: null,
       currentPriceLabel: "",
-      threshold: null,
-      thresholdLabel: "",
-      thresholdPresets: [],
       question: "",
       canCreate: false,
       blockedReason: error.message,
     };
     state.createContextLoaded = false;
-    createCurrentPriceEl.textContent = `Current price unavailable: ${error.message}`;
+    renderCreateCurrentPrice("Current price unavailable:", error.message, false);
   }
 
-  syncDirectionToggleUi();
-  renderThresholdPresets();
   syncCreateButtonState();
   syncPreview();
 }
@@ -2035,8 +2041,6 @@ async function handleCreateIntent() {
         ownerAddress: state.wallet.account.address,
         asset: assetEl.value,
         durationSec: Number(durationEl.value),
-        direction: directionEl?.value ?? "above",
-        threshold: thresholdPresetsEl?.dataset.selectedThreshold || undefined,
       }),
     });
 
@@ -2165,7 +2169,8 @@ async function handleBetIntent(contractAddress, side) {
   try {
     const existingPosition = state.positions.find((item) => item.contractAddress === contractAddress);
     const previousAmountTon = Number(existingPosition?.amountTon ?? 0);
-    setMarketNotice(contractAddress, `Preparing ${side === "YES" ? "Yes" : "No"} bet...`, "info");
+    const sideLabel = buildBetButtonLabel(market, side);
+    setMarketNotice(contractAddress, `Preparing ${sideLabel} bet...`, "info");
     const intent = await requestJson("/api/actions/bet-intent", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -2182,7 +2187,7 @@ async function handleBetIntent(contractAddress, side) {
     await sendTonTransaction(intent);
     setMarketNotice(
       contractAddress,
-      `${side === "YES" ? "Yes" : "No"} bet sent. Waiting for blockchain confirmation...`,
+      `${sideLabel} bet sent. Waiting for blockchain confirmation...`,
       "info",
     );
     waitForBetIndexed(contractAddress, state.wallet.account.address, previousAmountTon).catch((error) => {
@@ -2359,15 +2364,6 @@ function syncAssetPickerUi() {
   });
 }
 
-function syncDirectionToggleUi() {
-  const selectedDirection = directionEl?.value || CREATE_DIRECTION_OPTIONS[0];
-  directionButtonEls.forEach((button) => {
-    const isSelected = button.dataset.directionValue === selectedDirection;
-    button.classList.toggle("is-selected", isSelected);
-    button.setAttribute("aria-pressed", isSelected ? "true" : "false");
-  });
-}
-
 function syncDurationPickerUi() {
   if (!durationPickerValueEl || !durationEl) {
     return;
@@ -2381,44 +2377,6 @@ function syncDurationPickerUi() {
       option.dataset.durationValue === selectedDuration,
     );
   });
-}
-
-function renderThresholdPresets() {
-  if (!thresholdPresetsEl || !thresholdSelectedLabelEl) {
-    return;
-  }
-
-  const presets = Array.isArray(state.createContext.thresholdPresets)
-    ? state.createContext.thresholdPresets
-    : [];
-  const selectedThreshold = Number(state.createContext.threshold ?? 0);
-
-  thresholdSelectedLabelEl.textContent = state.createContext.thresholdLabel || "Loading…";
-
-  if (!presets.length) {
-    thresholdPresetsEl.innerHTML =
-      '<div class="threshold-presets__empty">Threshold presets will appear once the live price is ready.</div>';
-    thresholdPresetsEl.dataset.selectedThreshold = "";
-    return;
-  }
-
-  thresholdPresetsEl.dataset.selectedThreshold = String(selectedThreshold);
-  thresholdPresetsEl.innerHTML = presets
-    .map((preset) => {
-      const value = Number(preset.value);
-      const isSelected = value === selectedThreshold;
-      return `
-        <button
-          class="threshold-chip ${isSelected ? "is-selected" : ""}"
-          type="button"
-          data-threshold-value="${escapeAttr(String(value))}"
-          aria-pressed="${isSelected ? "true" : "false"}"
-        >
-          ${escapeHtml(preset.label)}
-        </button>
-      `;
-    })
-    .join("");
 }
 
 if (marketFilterTriggerEl && marketFilterMenuEl) {
@@ -2572,36 +2530,6 @@ if (durationPickerTriggerEl && durationPickerMenuEl) {
   element.addEventListener("change", () => {
     loadCreateContext();
   });
-});
-
-syncDirectionToggleUi();
-
-directionButtonEls.forEach((button) => {
-  button.addEventListener("click", () => {
-    const nextDirection = button.dataset.directionValue;
-    if (!nextDirection || !directionEl || nextDirection === directionEl.value) {
-      return;
-    }
-
-    directionEl.value = nextDirection;
-    syncDirectionToggleUi();
-    loadCreateContext();
-  });
-});
-
-thresholdPresetsEl?.addEventListener("click", (event) => {
-  const button = event.target.closest("[data-threshold-value]");
-  if (!button) {
-    return;
-  }
-
-  const nextThreshold = button.dataset.thresholdValue;
-  if (!nextThreshold || thresholdPresetsEl.dataset.selectedThreshold === nextThreshold) {
-    return;
-  }
-
-  thresholdPresetsEl.dataset.selectedThreshold = nextThreshold;
-  loadCreateContext();
 });
 
 createMarketButtonEl.addEventListener("click", handleCreateIntent);
@@ -2787,8 +2715,6 @@ loadMarkets(state.activeMarketStatus);
 clearActionFeedback();
 syncPositionsRefreshButton();
 syncAdminControls();
-syncDirectionToggleUi();
-renderThresholdPresets();
 renderUserMarkets(state.userMarkets);
 renderAdminMarkets(state.adminMarkets);
 renderAdminAuditLog(state.adminAuditEntries);

@@ -21,7 +21,6 @@ import {
   createCreateMarketIntent,
   DEFAULT_ACTION_VALUE_NANO,
   DIRECTION_ABOVE,
-  DIRECTION_BELOW,
   formatPrice6,
   getCachedMarketState,
   getCachedUserStake,
@@ -42,7 +41,7 @@ import {
   TON_FORECAST_MARKET_CONTRACT_VERSION,
   toPrice6,
 } from "./tonForecastMarket.js";
-import { getAssetSnapshotMap, getThresholdPresets } from "./stonApi.js";
+import { getAssetSnapshotMap } from "./stonApi.js";
 import { scheduleAutoResolveForRecord } from "./resolverAutomation.js";
 
 const SUPPORTED_DURATIONS = MARKET_DURATIONS;
@@ -82,14 +81,6 @@ function formatDurationLabel(durationSec) {
   return formatSharedDurationLabel(durationSec);
 }
 
-function ensureSupportedDirection(direction) {
-  const normalized = String(direction ?? "above").trim().toLowerCase();
-  if (normalized !== "above" && normalized !== "below") {
-    throw badRequest("direction must be above or below");
-  }
-  return normalized;
-}
-
 function normalizeSide(side) {
   const normalized = String(side ?? "").trim().toUpperCase();
   if (normalized !== "YES" && normalized !== "NO") {
@@ -120,22 +111,8 @@ function normalizeAmountTon(amountTon) {
   }
 }
 
-function normalizeThreshold(asset, threshold, fallbackPrice) {
-  if (threshold == null || threshold === "") {
-    return toPrice6(fallbackPrice);
-  }
-
-  const numeric = Number(threshold);
-  if (!Number.isFinite(numeric) || numeric <= 0) {
-    throw badRequest(`threshold must be a positive USD price for ${asset}`);
-  }
-
-  return toPrice6(numeric);
-}
-
-function buildQuestion(asset, threshold, durationSec, direction = "above") {
-  const normalizedDirection = ensureSupportedDirection(direction);
-  return `Will ${asset} be ${normalizedDirection} $${formatPrice6(threshold)} in ${formatDurationLabel(durationSec)}?`;
+function buildQuestion(asset, durationSec) {
+  return `${asset} Up or Down in next ${formatDurationLabel(durationSec)}`;
 }
 
 function buildCreateError(record) {
@@ -143,7 +120,7 @@ function buildCreateError(record) {
   return `Create blocked: ${record.asset} ${formatDurationLabel(record.durationSec)} market already exists and closes at ${reopenAt}.`;
 }
 
-export async function getCreateContext(asset, durationSec, direction = "above", threshold = null) {
+export async function getCreateContext(asset, durationSec) {
   if (!asset) {
     throw badRequest("asset is required");
   }
@@ -153,7 +130,6 @@ export async function getCreateContext(asset, durationSec, direction = "above", 
 
   ensureSupportedAsset(asset);
   const normalizedDuration = ensureSupportedDuration(durationSec);
-  const normalizedDirection = ensureSupportedDirection(direction);
   const snapshotMap = await getAssetSnapshotMap();
   const snapshot = snapshotMap.get(asset);
   if (!snapshot) {
@@ -161,33 +137,23 @@ export async function getCreateContext(asset, durationSec, direction = "above", 
   }
 
   const nowSec = Math.floor(Date.now() / 1000);
-  const blockingMarket = findBlockingCreate(asset, normalizedDuration, nowSec, normalizedDirection);
+  const blockingMarket = findBlockingCreate(asset, normalizedDuration, nowSec);
   const currentPrice = Number(snapshot.priceUsd);
-  const presetContext = await getThresholdPresets(asset, normalizedDirection);
-  const thresholdPresets = Array.isArray(presetContext.thresholds)
-    ? presetContext.thresholds.map((value) => Number(value))
-    : [];
-  const selectedThreshold = Number(
-    thresholdPresets.includes(Number(threshold))
-      ? Number(threshold)
-      : thresholdPresets[0] ?? currentPrice,
-  );
+  const lockedThreshold = toPrice6(currentPrice);
 
   return {
     asset,
-    direction: normalizedDirection,
-    directionLabel: normalizedDirection === "below" ? "Below" : "Above",
+    direction: "above",
     durationSec: normalizedDuration,
     durationLabel: formatDurationLabel(normalizedDuration),
     currentPrice,
     currentPriceLabel: `$${formatAssetUsd(currentPrice, asset)}`,
-    threshold: selectedThreshold,
-    thresholdLabel: `$${formatAssetUsd(selectedThreshold, asset)}`,
-    thresholdPresets: thresholdPresets.map((value) => ({
-      value,
-      label: `$${formatAssetUsd(value, asset)}`,
-    })),
-    question: buildQuestion(asset, toPrice6(selectedThreshold), normalizedDuration, normalizedDirection),
+    threshold: Number(currentPrice),
+    thresholdLabel: `$${formatAssetUsd(currentPrice, asset)}`,
+    lockedThreshold,
+    lockedThresholdLabel: `$${formatAssetUsd(currentPrice, asset)}`,
+    thresholdPresets: [],
+    question: buildQuestion(asset, normalizedDuration),
     canCreate: !blockingMarket,
     blockedReason: blockingMarket ? buildCreateError(blockingMarket) : "",
     blockingMarket: blockingMarket
@@ -200,10 +166,9 @@ export async function getCreateContext(asset, durationSec, direction = "above", 
   };
 }
 
-export async function createMarketIntent({ ownerAddress, asset, durationSec, direction, threshold }) {
+export async function createMarketIntent({ ownerAddress, asset, durationSec }) {
   const owner = parseAddress(ownerAddress);
-  const normalizedDirection = ensureSupportedDirection(direction);
-  const context = await getCreateContext(asset, durationSec, normalizedDirection, threshold);
+  const context = await getCreateContext(asset, durationSec);
   if (!context.canCreate) {
     throw badRequest(context.blockedReason || "Create blocked", 409);
   }
@@ -217,8 +182,7 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec, dir
   const deploymentSalt = marketId;
   const closeAt = nowSec + Number(durationSec);
   const resolveAt = closeAt + CREATE_RESOLVE_DELAY_SEC;
-  const thresholdValue = normalizeThreshold(asset, context.threshold, context.currentPrice);
-  const directionFlag = normalizedDirection === "below" ? DIRECTION_BELOW : DIRECTION_ABOVE;
+  const thresholdValue = toPrice6(context.currentPrice);
 
   const intent = createCreateMarketIntent({
     ownerAddress: owner,
@@ -230,7 +194,7 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec, dir
     threshold: thresholdValue,
     closeTime: BigInt(closeAt),
     resolveTime: BigInt(resolveAt),
-    direction: directionFlag,
+    direction: DIRECTION_ABOVE,
   });
 
   const draft = {
@@ -242,7 +206,7 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec, dir
     contractCodeHash: TON_FORECAST_MARKET_CODE_HASH,
     contractCodeHashBase64: TON_FORECAST_MARKET_CODE_HASH_BASE64,
     asset,
-    direction: normalizedDirection,
+    direction: "above",
     currentPriceAtCreate: context.currentPrice,
     threshold: Number(context.threshold),
     durationSec: Number(durationSec),
@@ -261,9 +225,9 @@ export async function createMarketIntent({ ownerAddress, asset, durationSec, dir
     message: intent.message,
     draft: {
       ...draft,
-      question: buildQuestion(asset, thresholdValue, Number(durationSec), normalizedDirection),
+      question: buildQuestion(asset, Number(durationSec)),
       currentPriceLabel: context.currentPriceLabel,
-      thresholdLabel: context.thresholdLabel,
+      thresholdLabel: context.lockedThresholdLabel,
     },
   };
 }
@@ -341,7 +305,7 @@ export async function createBetIntent({
     market: {
       contractAddress: record.contractAddress,
       side: normalizedSide,
-      question: buildQuestion(record.asset, toPrice6(record.threshold), record.durationSec),
+      question: buildQuestion(record.asset, record.durationSec),
     },
     preflightStatus,
   };

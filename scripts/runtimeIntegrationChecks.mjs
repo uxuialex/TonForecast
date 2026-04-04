@@ -211,14 +211,15 @@ async function testRuntimeStoreMigrationAndBackup() {
   });
 }
 
-async function testCreateContextDirectionAndPresets() {
+async function testCreateContextUsesLockedCurrentPrice() {
   await withTempRuntimeDir(async () => {
     const marketActions = await importFresh("apps/api/src/lib/marketActions.js");
-    const context = await marketActions.getCreateContext("TON", 300, "below");
-    assert.equal(context.direction, "below");
-    assert.ok(Array.isArray(context.thresholdPresets));
-    assert.ok(context.thresholdPresets.length >= 1);
-    assert.match(context.question, /below/i);
+    const context = await marketActions.getCreateContext("TON", 300);
+    assert.equal(context.direction, "above");
+    assert.equal(context.threshold, context.currentPrice);
+    assert.equal(context.thresholdLabel, context.currentPriceLabel);
+    assert.equal(context.lockedThresholdLabel, context.currentPriceLabel);
+    assert.equal(context.question, "TON Up or Down in next 5 min");
   });
 }
 
@@ -353,7 +354,7 @@ await testRuntimeEnvFailover();
 await testResolvePolicyConsensus();
 await testSourceMonitorSummary();
 await testRuntimeStoreMigrationAndBackup();
-await testCreateContextDirectionAndPresets();
+  await testCreateContextUsesLockedCurrentPrice();
 await testServerAdminRoutes();
 
 console.log("runtime integration checks passed");

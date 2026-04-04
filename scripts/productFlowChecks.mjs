@@ -47,7 +47,7 @@ function createSampleMarket(contractAddress = sampleContract) {
     ownerAddress: sampleUser,
     resolverAddress: sampleUser,
     treasuryAddress: sampleUser,
-    question: "Will TON be above $1.2000 in 5 min?",
+    question: "TON Up or Down in next 5 min",
     lastKnownStatus: "RESOLVED_DRAW",
     lastKnownYesPool: 1,
     lastKnownNoPool: 1,
@@ -118,14 +118,15 @@ async function testProductReadFlowAndRateLimits() {
     assert.ok(Number(positionsResponseThree.headers.get("retry-after") ?? 0) >= 1);
 
     const createContextResponse = await handleRequest(
-      new Request("http://localhost/api/create-context?asset=TON&durationSec=300&direction=below", {
+      new Request("http://localhost/api/create-context?asset=TON&durationSec=300", {
         headers: buildHeaders({ "x-forwarded-for": "10.10.10.20" }),
       }),
     );
     assert.equal(createContextResponse.status, 200);
     const createContextPayload = await createContextResponse.json();
-    assert.equal(createContextPayload.direction, "below");
-    assert.match(createContextPayload.question, /below/i);
+    assert.equal(createContextPayload.direction, "above");
+    assert.equal(createContextPayload.threshold, createContextPayload.currentPrice);
+    assert.equal(createContextPayload.question, "TON Up or Down in next 5 min");
 
     const adminWriteUrl = `http://localhost/api/admin/markets/${sampleContract}`;
     const adminWriteInit = {

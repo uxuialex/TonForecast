@@ -477,14 +477,11 @@ export async function handleRequest(request) {
     if (url.pathname === "/api/create-context") {
       const asset = url.searchParams.get("asset");
       const durationSec = url.searchParams.get("durationSec");
-      const direction = url.searchParams.get("direction") ?? "above";
-      const threshold = url.searchParams.get("threshold");
       const rateLimitHeaders = createRateLimitHeaders("create_context", request, [
         asset ?? "",
         durationSec ?? "",
-        direction,
       ]);
-      return json(await getCreateContext(asset, durationSec, direction, threshold), {
+      return json(await getCreateContext(asset, durationSec), {
         headers: rateLimitHeaders,
       });
     }

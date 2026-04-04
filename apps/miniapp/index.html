@@ -104,31 +104,6 @@
             </label>
 
             <label>
-              <span class="label-text">Direction</span>
-              <input id="direction" type="hidden" value="above" />
-              <div class="direction-toggle" role="tablist" aria-label="Market direction">
-                <button
-                  id="direction-above-button"
-                  class="direction-toggle__button is-selected"
-                  type="button"
-                  data-direction-value="above"
-                  aria-pressed="true"
-                >
-                  Above
-                </button>
-                <button
-                  id="direction-below-button"
-                  class="direction-toggle__button"
-                  type="button"
-                  data-direction-value="below"
-                  aria-pressed="false"
-                >
-                  Below
-                </button>
-              </div>
-            </label>
-
-            <label>
               <span class="label-text">Duration</span>
               <input id="duration" type="hidden" value="3600" />
               <div id="duration-picker" class="form-picker duration-picker">
@@ -156,22 +131,14 @@
               </div>
             </label>
 
-            <div class="threshold-block">
-              <div class="threshold-block__header">
-                <span class="label-text">Threshold</span>
-                <span id="threshold-selected-label" class="threshold-block__selected">Loading…</span>
-              </div>
-              <div id="threshold-presets" class="threshold-presets"></div>
-            </div>
-
             <p id="create-current-price" class="field-hint">Current price: loading…</p>
             <div id="create-notice" class="inline-notice create-notice is-hidden" aria-live="polite"></div>
 
             <div class="preview-box">
               <span class="preview-label">Preview</span>
-              <h3 id="preview-question">Will TON be above $3.42 in 60 seconds?</h3>
+              <h3 id="preview-question">TON Up or Down in next 60 min</h3>
               <ul class="preview-list">
-                <li>Resolution source: resolver + STON.fi market data</li>
+                <li>Baseline price is locked from the live feed at create time</li>
                 <li>Settlement model: proportional bet pool</li>
               </ul>
             </div>

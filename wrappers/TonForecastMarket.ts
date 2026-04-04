@@ -272,7 +272,7 @@ export function derivePositionSummary(
 }
 
 export function buildMarketQuestion(state: Pick<MarketState, 'assetIdText' | 'threshold' | 'direction'>): string {
-    return `Will ${state.assetIdText} be ${directionToText(state.direction)} $${formatPrice6(state.threshold)}?`;
+    return `${state.assetIdText} Up or Down?`;
 }
 
 export function encodeAssetId(assetId: string): bigint {

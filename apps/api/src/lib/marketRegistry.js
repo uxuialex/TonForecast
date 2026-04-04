@@ -889,16 +889,13 @@ export function findBlockingCreate(
   asset,
   durationSec,
   nowSec = Math.floor(Date.now() / 1000),
-  direction = "above",
 ) {
   const duration = Number(durationSec);
-  const normalizedDirection = String(direction ?? "above").trim().toLowerCase();
   const persisted = listMarketRecords().find(
     (item) =>
       !item.createFailedAt &&
       item.asset === asset &&
       Number(item.durationSec) === duration &&
-      String(item.direction ?? "above").trim().toLowerCase() === normalizedDirection &&
       Number(item.closeAt) > nowSec,
   );
 
@@ -912,7 +909,6 @@ export function findBlockingCreate(
       (item) =>
         item.asset === asset &&
         Number(item.durationSec) === duration &&
-        String(item.direction ?? "above").trim().toLowerCase() === normalizedDirection &&
         Number(item.closeAt) > nowSec,
     ) ?? null
   );

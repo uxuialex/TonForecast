@@ -66,7 +66,7 @@ describe('TonForecastMarket happy path', () => {
     it('runs create -> bet yes/no -> resolve -> claim', async () => {
         let state = await contract.getMarketState();
         const config = await contract.getMarketConfig();
-        expect(buildMarketQuestion(state)).toBe('Will TON be above $3.420000?');
+        expect(buildMarketQuestion(state)).toBe('TON Up or Down?');
         expect(config.treasuryAddress.toString()).toBe(treasury.address.toString());
 
         await contract.sendBetYes(yesBettor.getSender(), toNano('10'));

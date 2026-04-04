@@ -185,7 +185,7 @@ function isHiddenFromPublic(record) {
 }
 
 function isPubliclyVisibleRecord(record) {
-  return Boolean(record) && !isHiddenFromPublic(record);
+  return Boolean(record) && !isHiddenFromPublic(record) && !isLegacyRecord(record);
 }
 
 function filterHiddenPositionItems(items) {
@@ -346,7 +346,7 @@ function getCandidateRecords(records, status, nowSec, options = {}) {
   const includeHidden = options.includeHidden === true;
   const validRecords = records
     .filter((record) => !record.createFailedAt)
-    .filter((record) => includeHidden || !isHiddenFromPublic(record))
+    .filter((record) => includeHidden || isPubliclyVisibleRecord(record))
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
 
   if (status === "OPEN") {
