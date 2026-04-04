@@ -32,6 +32,7 @@ jobs:
               echo "[deploy] rollback to ${PREV_COMMIT}"
               git reset --hard "$PREV_COMMIT"
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
+              docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
               docker compose up -d --build --force-recreate --no-deps api
               docker compose up -d --force-recreate --no-deps miniapp
             }
@@ -41,6 +42,7 @@ jobs:
             git reset --hard origin/main
             if [ -f docker-compose.yml ]; then
               docker rm -f $(docker ps -aq --filter "name=ton-forecast-api") 2>/dev/null || true
+              docker rm -f $(docker ps -aq --filter "name=ton-forecast-miniapp") 2>/dev/null || true
               docker compose up -d --build --force-recreate --no-deps api
               docker compose up -d --force-recreate --no-deps miniapp
               curl -fsS http://127.0.0.1:3010 >/dev/null

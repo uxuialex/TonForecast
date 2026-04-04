@@ -1160,11 +1160,21 @@ select:focus {
   margin-bottom: 12px;
 }
 
+.positions-toolbar--compact {
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
 .positions-toolbar__actions {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.positions-toolbar--compact .positions-toolbar__actions {
+  flex: 0 0 auto;
 }
 
 .positions-heading {
@@ -1178,6 +1188,12 @@ select:focus {
   color: var(--dim);
   font-size: 12px;
   line-height: 1.45;
+}
+
+.sync-meta--inline {
+  margin-top: 0;
+  margin-left: auto;
+  text-align: right;
 }
 
 .admin-toolbar {
@@ -1228,6 +1244,18 @@ select:focus {
 .positions-list {
   display: grid;
   gap: 10px;
+}
+
+@media (max-width: 520px) {
+  .positions-toolbar--compact {
+    align-items: flex-start;
+  }
+
+  .sync-meta--inline {
+    flex: 1 0 100%;
+    margin-left: 0;
+    text-align: left;
+  }
 }
 
 .position-row {
