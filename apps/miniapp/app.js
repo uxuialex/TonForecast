@@ -1709,8 +1709,8 @@ function renderMarkets(items) {
             <div><dt>Resolve</dt><dd>${escapeHtml(formatMarketDateTime(market.resolveAt))}</dd></div>
           </dl>
           <div class="card-actions">
-            <button class="yes-button ${pendingBetSide === "YES" ? "is-busy" : ""}" data-action="bet" data-side="YES" ${canBet ? "" : "disabled"}>${pendingBetSide === "YES" ? "Confirming..." : buildBetButtonLabel(market, "YES")}</button>
             <button class="no-button ${pendingBetSide === "NO" ? "is-busy" : ""}" data-action="bet" data-side="NO" ${canBet ? "" : "disabled"}>${pendingBetSide === "NO" ? "Confirming..." : buildBetButtonLabel(market, "NO")}</button>
+            <button class="yes-button ${pendingBetSide === "YES" ? "is-busy" : ""}" data-action="bet" data-side="YES" ${canBet ? "" : "disabled"}>${pendingBetSide === "YES" ? "Confirming..." : buildBetButtonLabel(market, "YES")}</button>
           </div>
           ${
             notice

@@ -139,7 +139,7 @@ export async function getCreateContext(asset, durationSec) {
   const nowSec = Math.floor(Date.now() / 1000);
   const blockingMarket = findBlockingCreate(asset, normalizedDuration, nowSec);
   const currentPrice = Number(snapshot.priceUsd);
-  const lockedThreshold = toPrice6(currentPrice);
+  const currentPriceLabel = `$${formatAssetUsd(currentPrice, asset)}`;
 
   return {
     asset,
@@ -147,11 +147,10 @@ export async function getCreateContext(asset, durationSec) {
     durationSec: normalizedDuration,
     durationLabel: formatDurationLabel(normalizedDuration),
     currentPrice,
-    currentPriceLabel: `$${formatAssetUsd(currentPrice, asset)}`,
+    currentPriceLabel,
     threshold: Number(currentPrice),
-    thresholdLabel: `$${formatAssetUsd(currentPrice, asset)}`,
-    lockedThreshold,
-    lockedThresholdLabel: `$${formatAssetUsd(currentPrice, asset)}`,
+    thresholdLabel: currentPriceLabel,
+    lockedThresholdLabel: currentPriceLabel,
     thresholdPresets: [],
     question: buildQuestion(asset, normalizedDuration),
     canCreate: !blockingMarket,
