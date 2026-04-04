@@ -184,6 +184,20 @@ function isHiddenFromPublic(record) {
   return Boolean(record?.adminHiddenAt);
 }
 
+function isPubliclyVisibleRecord(record) {
+  return Boolean(record) && !isHiddenFromPublic(record);
+}
+
+function filterHiddenPositionItems(items) {
+  return (items ?? []).filter((item) => {
+    if (!item?.contractAddress) {
+      return false;
+    }
+
+    return isPubliclyVisibleRecord(getMarketRecord(item.contractAddress));
+  });
+}
+
 function isLegacyRecord(record) {
   return Boolean(
     record?.adminLegacyFlagAt ||
@@ -626,7 +640,7 @@ export async function listUserMarkets(userAddress) {
   const nowSec = Math.floor(Date.now() / 1000);
   const snapshotMap = await getAssetSnapshotMap();
   const indexedRecords = getIndexedMarketRecordsForUser(normalizedUser)
-    .filter((record) => !record.createFailedAt)
+    .filter((record) => !record.createFailedAt && isPubliclyVisibleRecord(record))
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
   const recordPatches = new Map();
   const knownPositions = mergePositionItems(
@@ -676,7 +690,7 @@ export async function listUserMarkets(userAddress) {
 function getPositionCandidateRecords(userAddress, { full = false } = {}) {
   const records = listMarketRecords();
   const sortedRecords = [...records]
-    .filter((record) => !record.createFailedAt)
+    .filter((record) => !record.createFailedAt && isPubliclyVisibleRecord(record))
     .sort((left, right) => Number(right.createdAt) - Number(left.createdAt));
 
   if (full) {
@@ -754,7 +768,7 @@ async function buildSinglePosition(contractAddress, userAddress, options = {}) {
   const normalizedUser = normalizeUserAddress(userAddress);
   const normalizedAddress = parseAddress(contractAddress).toString();
   const record = getMarketRecord(normalizedAddress);
-  if (!record || record.createFailedAt) {
+  if (!record || record.createFailedAt || !isPubliclyVisibleRecord(record)) {
     return null;
   }
 
@@ -818,10 +832,10 @@ export async function listPositions(userAddress, options = {}) {
   const persistedItems = getPersistedPositionItems(normalizedUser);
 
   if (!fresh) {
-    const cached = mergePositionItems(
+    const cached = filterHiddenPositionItems(mergePositionItems(
       persistedItems,
       getPreferredCachedPositions(normalizedUser, { full }) ?? [],
-    );
+    ));
     if (cached.length || cachedOnly) {
       incrementMetric("positions_cache_hit_total", 1, { scope: full ? "full" : "recent" });
       return cached;
@@ -847,11 +861,11 @@ export async function listPositions(userAddress, options = {}) {
 
   const inflight = buildPositions(normalizedUser, { full })
     .then((items) => {
-      const previousItems = mergePositionItems(
+      const previousItems = filterHiddenPositionItems(mergePositionItems(
         persistedItems,
         getMergedCachedPositions(normalizedUser, { allowStale: true }),
-      );
-      const mergedItems = mergePositionItems(previousItems, items);
+      ));
+      const mergedItems = filterHiddenPositionItems(mergePositionItems(previousItems, items));
       writePositionsCaches(normalizedUser, mergedItems, { includeFull: full });
       saveUserPositionSnapshot(normalizedUser, normalizePersistedPositionItems(mergedItems));
       incrementMetric("positions_refresh_success_total", 1, {
@@ -864,7 +878,7 @@ export async function listPositions(userAddress, options = {}) {
         full,
         allowStale: true,
       }) ?? getMergedCachedPositions(normalizedUser, { allowStale: true });
-      const fallback = mergePositionItems(persistedItems, stale ?? []);
+      const fallback = filterHiddenPositionItems(mergePositionItems(persistedItems, stale ?? []));
       if (fallback.length) {
         console.warn(
           `[api] positions refresh failed for ${normalizedUser}, serving stale cache: ${error instanceof Error ? error.message : String(error)}`,

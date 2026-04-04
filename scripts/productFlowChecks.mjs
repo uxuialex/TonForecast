@@ -144,6 +144,24 @@ async function testProductReadFlowAndRateLimits() {
     const adminWriteResponseOne = await handleRequest(new Request(adminWriteUrl, adminWriteInit));
     assert.equal(adminWriteResponseOne.status, 200);
 
+    const hiddenMyMarketsResponse = await handleRequest(
+      new Request(`http://localhost/api/my-markets?userAddress=${encodeURIComponent(sampleUser)}`, {
+        headers: buildHeaders({ "x-forwarded-for": "10.10.10.31" }),
+      }),
+    );
+    assert.equal(hiddenMyMarketsResponse.status, 200);
+    const hiddenMyMarketsPayload = await hiddenMyMarketsResponse.json();
+    assert.equal(hiddenMyMarketsPayload.items.length, 0);
+
+    const hiddenPositionsResponse = await handleRequest(
+      new Request(positionsUrl, {
+        headers: buildHeaders({ "x-forwarded-for": "10.10.10.32" }),
+      }),
+    );
+    assert.equal(hiddenPositionsResponse.status, 200);
+    const hiddenPositionsPayload = await hiddenPositionsResponse.json();
+    assert.equal(hiddenPositionsPayload.items.length, 0);
+
     const adminWriteResponseTwo = await handleRequest(new Request(adminWriteUrl, adminWriteInit));
     assert.equal(adminWriteResponseTwo.status, 429);
 
