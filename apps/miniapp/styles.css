@@ -279,6 +279,7 @@ h1, h2, h3, p, ul, ol, dl, dd {
 .token-icon {
   width: 26px;
   height: 26px;
+  display: block;
   border-radius: 50%;
   flex-shrink: 0;
   object-fit: cover;
@@ -531,8 +532,10 @@ main {
 }
 
 .form-picker__value {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  flex: 1 1 auto;
+  min-height: 100%;
   min-width: 0;
 }
 
@@ -627,15 +630,17 @@ main {
 
 .form-picker__item,
 .asset-picker__item {
-  display: inline-flex;
+  display: flex;
   align-items: center;
   gap: 10px;
+  min-height: 100%;
   min-width: 0;
 }
 
 .form-picker__label,
 .asset-picker__label {
   font-weight: 600;
+  line-height: 1;
   white-space: nowrap;
 }
 
